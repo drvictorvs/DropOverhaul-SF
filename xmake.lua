@@ -2,7 +2,7 @@
 set_xmakever("3.0.0")
 
 set_project("DropOverhaulSF")
-set_version("0.1.1")
+set_version("0.2.0")
 set_license("GPL-3.0")
 
 set_arch("x64")
@@ -30,4 +30,5 @@ target("DropOverhaulSF", function()
     add_syslinks("user32")  -- GetAsyncKeyState, GetForegroundWindow
 
     add_installfiles("dist/Data/SFSE/Plugins/DropOverhaulSF.ini", { prefixdir = "SFSE/Plugins" })
+    add_installfiles("dist/Data/SFSE/Plugins/OSF/Settings/schemas/dropoverhaul-sf.json", { prefixdir = "SFSE/Plugins/OSF/Settings/schemas" })
 end)

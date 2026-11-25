@@ -2,7 +2,8 @@
 
 namespace DROP
 {
-	// Values come from Data/SFSE/Plugins/DropOverhaulSF.ini. Keys are Windows virtual-key codes.
+	// Values come from Data/SFSE/Plugins/DropOverhaulSF.ini, or from OSF Settings when it is
+	// installed (OSF.cpp). Keys are Windows virtual-key codes; 0 = off.
 	struct Settings
 	{
 		// [Keys]

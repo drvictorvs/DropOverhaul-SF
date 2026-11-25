@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "title": "Drop Overhaul",
+  "description": "Pick up a loose object, hold it still in front of you, turn and move it precisely, then set it down.",
+  "groups": {
+    "Keys": [
+      {
+        "key": "grabKey",
+        "type": "key",
+        "label": "Pick up / place",
+        "default": "MOUSE3",
+        "allowMouse": true,
+        "hint": "Picks up what you're looking at (whatever the activation prompt is for); press again to place it."
+      },
+      { "key": "cancelKey", "type": "key", "label": "Put back", "default": "Delete", "hint": "Returns the held object to where it was." },
+      { "key": "yawLeftKey", "type": "key", "label": "Turn left", "default": "NumPad4" },
+      { "key": "yawRightKey", "type": "key", "label": "Turn right", "default": "NumPad6" },
+      { "key": "pitchUpKey", "type": "key", "label": "Tilt forward", "default": "NumPad8" },
+      { "key": "pitchDownKey", "type": "key", "label": "Tilt back", "default": "NumPad2" },
+      { "key": "rollLeftKey", "type": "key", "label": "Roll left", "default": "NumPad7" },
+      { "key": "rollRightKey", "type": "key", "label": "Roll right", "default": "NumPad9" },
+      { "key": "resetRotationKey", "type": "key", "label": "Upright", "default": "NumPad5", "hint": "Upright, facing the same way as you." },
+      { "key": "pushKey", "type": "key", "label": "Farther", "default": "NumPad+" },
+      { "key": "pullKey", "type": "key", "label": "Closer", "default": "NumPad-" },
+      { "key": "raiseKey", "type": "key", "label": "Higher", "default": "PgUp" },
+      { "key": "lowerKey", "type": "key", "label": "Lower", "default": "PgDn" },
+      { "key": "fineKey", "type": "key", "label": "Fine adjustment (hold)", "default": "L Alt", "hint": "While held, turning and moving are slower." },
+      {
+        "key": "freezeToggleKey",
+        "type": "key",
+        "label": "Drops / stays in place",
+        "default": "NumPad.",
+        "hint": "Switches the held object between dropping when placed and staying exactly where placed."
+      }
+    ],
+    "Placement": [
+      {
+        "key": "dropOnPlace",
+        "type": "bool",
+        "label": "Drop when placed",
+        "default": true,
+        "hint": "On: physics takes over when you place an object, and it settles onto what's below it. Off: it stays exactly where you placed it, even in mid-air, until the area reloads."
+      },
+      { "key": "rotateWithView", "type": "bool", "label": "Turn with you", "default": true, "hint": "The held object turns as you turn, keeping the same side towards you." },
+      {
+        "key": "allowStatic",
+        "type": "bool",
+        "label": "Move objects without physics",
+        "default": false,
+        "hint": "Also move some furniture and clutter that has no physics. Their collision may not follow the object."
+      },
+      { "key": "rotateSpeed", "type": "float", "label": "Turning speed (degrees per second)", "default": 90.0, "min": 1.0, "max": 720.0, "step": 5.0 },
+      { "key": "moveSpeed", "type": "float", "label": "Moving speed (units per second)", "default": 150.0, "min": 1.0, "max": 2000.0, "step": 10.0 },
+      { "key": "fineMultiplier", "type": "float", "label": "Fine adjustment speed", "default": 0.2, "min": 0.01, "max": 1.0, "step": 0.05, "hint": "Fraction of the normal speed while the fine adjustment key is held." },
+      { "key": "minDistance", "type": "float", "label": "Closest distance", "default": 40.0, "min": 0.0, "max": 1000.0, "step": 10.0 },
+      { "key": "maxDistance", "type": "float", "label": "Farthest distance", "default": 1000.0, "min": 10.0, "max": 10000.0, "step": 50.0 }
+    ],
+    "General": [
+      { "key": "notifications", "type": "bool", "label": "HUD messages", "default": true, "hint": "Holding, Put back, Can't move that, and so on." },
+      { "key": "debugLog", "type": "bool", "label": "Detailed log", "default": false, "hint": "Extra details in DropOverhaulSF.log, for troubleshooting." }
+    ]
+  }
+}

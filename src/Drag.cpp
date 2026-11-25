@@ -2,6 +2,7 @@
 
 #include "Engine.h"
 #include "GameIDs.h"
+#include "OSF.h"
 #include "Settings.h"
 
 // user32 / kernel32. Declared here because the shared Windows wrappers don't have them.
@@ -45,6 +46,12 @@ namespace DROP::Drag
 				return pressed;
 			}
 		};
+
+		// A press action: from OSF Settings' input path when it delivers presses, else polled here.
+		bool Pressed(Edge& a_edge, std::uint32_t a_key, OSF::Press a_press)
+		{
+			return OSF::DeliversPresses() ? OSF::TakePress(a_press) : a_edge.Pressed(a_key);
+		}
 
 		struct HeldObject
 		{
@@ -244,12 +251,12 @@ namespace DROP::Drag
 			if (Held(settings.lowerKey)) held.height -= move;
 			held.distance = std::clamp(held.distance, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
 
-			if (g_reset.Pressed(settings.resetRotationKey)) {
+			if (Pressed(g_reset, settings.resetRotationKey, OSF::Press::ResetRotation)) {
 				held.pitch = 0.0F;
 				held.roll = 0.0F;
 				held.yaw = 0.0F;  // upright, facing the same way as you (or north, without bRotateWithView)
 			}
-			if (g_freeze.Pressed(settings.freezeToggleKey)) {
+			if (Pressed(g_freeze, settings.freezeToggleKey, OSF::Press::FreezeToggle)) {
 				held.dropOnPlace = !held.dropOnPlace;
 				REX::INFO("{:08X}: {} when placed", Engine::FormID(object), held.dropOnPlace ? "drops" : "stays in place");
 				Tell(held.dropOnPlace ? "Drops when placed" : "Stays where placed");
@@ -304,10 +311,13 @@ namespace DROP::Drag
 			// Forget key states, so a key pressed in a menu doesn't act when it closes.
 			g_grab.Pressed(settings.grabKey);
 			g_cancel.Pressed(settings.cancelKey);
+			g_reset.Pressed(settings.resetRotationKey);
+			g_freeze.Pressed(settings.freezeToggleKey);
+			OSF::ClearPresses();
 			return;
 		}
 
-		const bool grabPressed = g_grab.Pressed(settings.grabKey);
+		const bool grabPressed = Pressed(g_grab, settings.grabKey, OSF::Press::Grab);
 		if (grabPressed && settings.debugLog) {
 			REX::INFO("Grab key ({:#04x}) pressed", settings.grabKey);
 		}
@@ -320,9 +330,13 @@ namespace DROP::Drag
 			return;
 		}
 		if (!g_held) {
+			// Presses meant for a held object don't wait for the next pickup.
+			OSF::TakePress(OSF::Press::Cancel);
+			OSF::TakePress(OSF::Press::ResetRotation);
+			OSF::TakePress(OSF::Press::FreezeToggle);
 			return;
 		}
-		if (g_cancel.Pressed(settings.cancelKey)) {
+		if (Pressed(g_cancel, settings.cancelKey, OSF::Press::Cancel)) {
 			PutBack();
 			return;
 		}

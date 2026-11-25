@@ -87,9 +87,10 @@ namespace DROP::Address
 		return it != v0.end() && it->id == a_id && it->offset != 0;
 	}
 
-	bool AllPresent()
+	bool AllPresent(std::string* a_missing)
 	{
-		static const bool ok = []() {
+		static std::string missing;
+		static const bool  ok = []() {
 			struct Need
 			{
 				std::uint64_t id;
@@ -120,11 +121,15 @@ namespace DROP::Address
 			for (const auto& need : needs) {
 				if (!IsPresent(need.id)) {
 					REX::ERROR("Address Library ID {} ({}) is not available for this game version", need.id, need.name);
+					missing += std::format("{}ID {} ({})", missing.empty() ? "" : ", ", need.id, need.name);
 					all = false;
 				}
 			}
 			return all;
 		}();
+		if (a_missing) {
+			*a_missing = missing;
+		}
 		return ok;
 	}
 }

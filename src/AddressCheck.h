@@ -13,6 +13,7 @@ namespace DROP::Address
 	bool IsPresent(std::uint64_t a_id);
 
 	// Checks every ID the plugin uses (GameIDs.h and the CommonLibSF calls it makes).
-	// Logs each missing one. Runs the check once; afterwards returns the cached result.
-	bool AllPresent();
+	// Logs each missing one and, if a_missing is given, lists them there. Runs the check once;
+	// afterwards returns the cached result (and lists nothing).
+	bool AllPresent(std::string* a_missing = nullptr);
 }
