@@ -39,6 +39,9 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 
 	REX::INFO("{} {} loading", SFSE::GetPluginName(), SFSE::GetPluginVersion().string());
 	DROP::Settings::Get().Load();
+	if (DROP::Settings::Get().debugLog) {
+		REX::INFO("Detailed log on (bDebugLog = 1)");
+	}
 
 	// Check every Address Library ID up front, so a missing one leaves the game untouched
 	// instead of ending it.
@@ -51,7 +54,7 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 			"Install the Address Library for SFSE Plugins that matches your game version, or update Drop Overhaul.");
 	}
 
-	// Not an SFSE task: those run several times a frame on worker threads, where moving objects isn't safe.
+	// Not an SFSE task: those run several times a frame, in parallel, where moving objects isn't safe.
 	if (g_active && !DROP::InputHook::Install()) {
 		g_active = false;
 		DROP::OSF::ReportIssue("frame-hook", "Drop Overhaul is inactive",

@@ -62,8 +62,8 @@ namespace DROP::GameID
 
 	// ---- Per-frame hook --------------------------------------------------------------------------
 
-	// void (PlayerControls::Manager*, InputEvent* head). The player-controls input pass: runs on the
-	// game thread every frame with that frame's input events (it resets the movement input and adds
+	// void (PlayerControls::Manager*, InputEvent* head). The player-controls input pass: runs once
+	// every frame, in the game's frame update, with that frame's input events (it resets the movement input and adds
 	// the frame time to a timer before reading them). Slot 1 of the PlayerControls::Manager vtable.
 	inline constexpr REL::ID PerformInputProcessing{ 82442 };
 

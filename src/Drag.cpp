@@ -29,9 +29,112 @@ namespace DROP::Drag
 			return a_angle - kPi;
 		}
 
+		// ---- Keys --------------------------------------------------------------------------------
+		//
+		// A key counts as down if either source says so: the game's own input events for this frame
+		// (what the game itself acts on), or Windows' key state. The game's keyboard and mouse devices
+		// send a button event every frame for each key that is down (value 1), and one more when it's
+		// released (value 0) (keyboard poll ID 124263; mouse code at 1422fad30). Keyboard codes are
+		// virtual-key codes; mouse codes are 0 left, 1 right, 2 middle, 3 and 4 the side buttons.
+
+		std::uint64_t g_frame = 0;
+
+		class GameKeys
+		{
+		public:
+			void Update(const RE::InputEvent* a_head)
+			{
+				for (const auto* event = a_head; event; event = event->next) {
+					if (event->eventType != RE::InputEvent::EventType::kButton) {
+						continue;
+					}
+					const auto* button = static_cast<const RE::ButtonEvent*>(event);
+					Key* key = Find(button->deviceType, button->idCode);
+					if (!key) {
+						continue;
+					}
+					const bool down = button->value != 0.0F;
+					if (down && !IsDown(*key) && Settings::Get().debugLog && _logged < 300) {
+						++_logged;
+						const char* action = button->strUserEvent.c_str();
+						REX::INFO("Game input: {} {:#x} down (action '{}')",
+							button->deviceType == RE::InputEvent::DeviceType::kMouse ? "mouse" : "key",
+							static_cast<std::uint32_t>(button->idCode), action ? action : "");
+					}
+					key->down = down;
+					key->frame = g_frame;
+				}
+			}
+
+			// a_vk: a Windows virtual-key code, as the settings use.
+			bool Down(std::uint32_t a_vk) const
+			{
+				const Key* key = FindVK(a_vk);
+				return key && IsDown(*key);
+			}
+
+		private:
+			struct Key
+			{
+				bool          down{ false };
+				std::uint64_t frame{ 0 };
+			};
+
+			// A key that sent no event for this many frames is up (a release that wasn't seen).
+			static constexpr std::uint64_t kStaleFrames = 10;
+
+			static bool IsDown(const Key& a_key) { return a_key.down && g_frame - a_key.frame <= kStaleFrames; }
+
+			static std::optional<std::size_t> MouseButton(std::uint32_t a_vk)
+			{
+				switch (a_vk) {
+				case 0x01: return 0;  // VK_LBUTTON
+				case 0x02: return 1;  // VK_RBUTTON
+				case 0x04: return 2;  // VK_MBUTTON
+				case 0x05: return 3;  // VK_XBUTTON1
+				case 0x06: return 4;  // VK_XBUTTON2
+				default: return std::nullopt;
+				}
+			}
+
+			Key* Find(RE::InputEvent::DeviceType a_device, std::int32_t a_code)
+			{
+				if (a_code < 0) {
+					return nullptr;
+				}
+				const auto code = static_cast<std::size_t>(a_code);
+				if (a_device == RE::InputEvent::DeviceType::kKeyboard && code < _keyboard.size()) {
+					return &_keyboard[code];
+				}
+				if (a_device == RE::InputEvent::DeviceType::kMouse && code < _mouse.size()) {
+					return &_mouse[code];
+				}
+				return nullptr;
+			}
+
+			const Key* FindVK(std::uint32_t a_vk) const
+			{
+				if (const auto button = MouseButton(a_vk)) {
+					return &_mouse[*button];
+				}
+				return a_vk < _keyboard.size() ? &_keyboard[a_vk] : nullptr;
+			}
+
+			std::array<Key, 256> _keyboard{};
+			std::array<Key, 5>   _mouse{};
+			std::uint32_t        _logged{ 0 };
+		};
+
+		GameKeys g_gameKeys;
+
+		bool WindowsDown(std::uint32_t a_key)
+		{
+			return (GetAsyncKeyState(static_cast<int>(a_key)) & 0x8000) != 0;
+		}
+
 		bool Held(std::uint32_t a_key)
 		{
-			return a_key != 0 && (GetAsyncKeyState(static_cast<int>(a_key)) & 0x8000) != 0;
+			return a_key != 0 && (g_gameKeys.Down(a_key) || WindowsDown(a_key));
 		}
 
 		// Acts on the press, not while held.
@@ -134,26 +237,6 @@ namespace DROP::Drag
 		Vec3 TargetPosition(const HeldObject& a_held, const Engine::View& a_view)
 		{
 			return a_view.origin + a_view.forward * a_held.distance + Vec3{ 0.0F, 0.0F, a_held.height };
-		}
-
-		// Debug log: the button presses the game itself received this frame (device, code, action name),
-		// to compare with the keys set for this plugin.
-		void LogButtonPresses(const RE::InputEvent* a_head)
-		{
-			static std::uint32_t logged = 0;
-			for (const auto* event = a_head; event && logged < 500; event = event->next) {
-				if (event->eventType != RE::InputEvent::EventType::kButton) {
-					continue;
-				}
-				const auto* button = static_cast<const RE::ButtonEvent*>(event);
-				if (button->value == 0.0F || button->heldDownSecs > 0.0F) {
-					continue;  // released, or still held from an earlier frame
-				}
-				++logged;
-				const char* action = button->strUserEvent.c_str();
-				REX::INFO("Game input: device {} code {:#x} action '{}'", std::to_underlying(button->deviceType),
-					static_cast<std::uint32_t>(button->idCode), action ? action : "");
-			}
 		}
 
 		void TryPickUp()
@@ -284,6 +367,9 @@ namespace DROP::Drag
 
 	void OnFrame(const RE::InputEvent* a_head)
 	{
+		++g_frame;
+		g_gameKeys.Update(a_head);
+
 		const auto now = std::chrono::steady_clock::now();
 		const float seconds = g_lastFrame.time_since_epoch().count() == 0 ? 0.0F :
 		                                                                     std::clamp(std::chrono::duration<float>(now - g_lastFrame).count(), 0.0F, 0.1F);
@@ -291,9 +377,6 @@ namespace DROP::Drag
 
 		OSF::ApplyChanges();
 		const auto& settings = Settings::Get();
-		if (settings.debugLog) {
-			LogButtonPresses(a_head);
-		}
 
 		const auto* ui = RE::UI::GetSingleton();
 		if (g_held && ui && ui->IsMenuOpen(LoadingMenu())) {
@@ -303,6 +386,7 @@ namespace DROP::Drag
 		}
 
 		// Log why keys are ignored whenever that changes, so a menu that never closes shows up.
+		static bool        first = true;
 		static bool        lastFocus = true;
 		static const char* lastBlocker = nullptr;
 		const bool         focus = GameHasFocus();
@@ -311,7 +395,8 @@ namespace DROP::Drag
 			REX::INFO(focus ? "Game window has focus again" : "Game window lost focus: keys ignored");
 			lastFocus = focus;
 		}
-		if (blocker != lastBlocker) {
+		if (blocker != lastBlocker || first) {
+			first = false;
 			if (blocker) {
 				REX::INFO("{} is open: keys ignored", blocker);
 			} else {
@@ -329,7 +414,9 @@ namespace DROP::Drag
 		}
 
 		if (g_grab.Pressed(settings.grabKey)) {
-			REX::INFO("Pick-up key ({:#04x}) pressed: {}", settings.grabKey, g_held ? "placing" : "picking up");
+			REX::INFO("Pick-up key ({:#04x}) pressed (game input: {}, Windows: {}): {}", settings.grabKey,
+				g_gameKeys.Down(settings.grabKey) ? "down" : "up", WindowsDown(settings.grabKey) ? "down" : "up",
+				g_held ? "placing" : "picking up");
 			if (g_held) {
 				Place();
 			} else {

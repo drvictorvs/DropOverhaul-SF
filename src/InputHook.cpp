@@ -11,7 +11,7 @@ namespace DROP::InputHook
 		Process_t            g_original = nullptr;
 		std::atomic<FrameFn> g_frame{ nullptr };
 
-		// Startup check that the hook runs as expected: once a frame, on one thread.
+		// Startup check that the hook runs as expected: about once a frame.
 		void CheckRate()
 		{
 			using clock = std::chrono::steady_clock;
@@ -30,13 +30,20 @@ namespace DROP::InputHook
 			}
 			if (current != thread && !otherThread) {
 				otherThread = true;
-				REX::WARN("Frame hook also called from thread {} (first was {})", current, thread);
+				REX::INFO("Frame hook also runs on thread {} (first was {}): the game moves its frame work between threads", current, thread);
 			}
+			const float seconds = std::chrono::duration<float>(clock::now() - start).count();
 			if (!reported) {
-				const float seconds = std::chrono::duration<float>(clock::now() - start).count();
 				if (seconds >= 10.0F) {
 					reported = true;
 					REX::INFO("Frame hook: {} calls in {:.0f} s (about {:.0f} a second)", calls, seconds, static_cast<float>(calls) / seconds);
+				}
+			} else if (seconds < 600.0F) {
+				// For the first 10 minutes, a line a minute shows the hook keeps running.
+				static int minutes = 0;
+				if (static_cast<int>(seconds / 60.0F) > minutes) {
+					minutes = static_cast<int>(seconds / 60.0F);
+					REX::INFO("Frame hook still running ({} calls so far)", calls);
 				}
 			}
 		}

@@ -1,7 +1,8 @@
 #pragma once
 
 // The plugin's frame: a hook on the player-controls input pass (PerformInputProcessing, ID 82442),
-// which the game runs on its own thread once per frame. The plugin's work runs right after it.
+// which the game runs once per frame as part of its frame update (one call at a time, though not
+// always on the same thread). The plugin's work runs right after it.
 //
 // The hook is a jump written at the start of the function, so it doesn't take the vtable slot that
 // other plugins (Dialogue Movement Enabler, for one) hook and check. If the function's start isn't

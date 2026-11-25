@@ -2,7 +2,7 @@
 
 An SFSE plugin for Starfield that lets you pick up a loose object and place it precisely: hold it in front of you, turn it on any axis, push it farther or pull it closer, raise or lower it, then set it down. Pressing E and dragging uses the game's physics grab, which swings and drops objects; this holds them still.
 
-Status: 0.3.0, not yet confirmed in game. Earlier versions never reacted to the pick-up key; 0.3.0 runs on the game's own thread once per frame (0.1.0 and 0.2.0 ran as an SFSE task, which runs several times a frame on worker threads) and logs every pickup attempt.
+Status: 0.3.1, not yet confirmed in game. Earlier versions never reacted to the pick-up key. Since 0.3.0 the plugin runs once per frame inside the game's frame update (0.1.0 and 0.2.0 ran as an SFSE task, which runs several times a frame in parallel) and logs every pickup attempt; 0.3.1 also reads the keys from the game's own input events.
 
 Requires [SFSE](https://www.nexusmods.com/starfield/mods/106) and [Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256). Built for Starfield 1.16.244. No plugin (ESM/ESP) needed. Optional: [OSF Settings](https://github.com/ozooma10/osf-settings-slim) 1.0.0, for an in-game settings page.
 
@@ -41,13 +41,13 @@ Characters can't be picked up. Objects without physics (some furniture and stati
 - **What you're looking at:** the game's own view caster, the same target the HUD's activation prompt uses (`ViewCaster`, Address Library ID 82616 reads it).
 - **Holding still:** while held, the object's physics is switched to keyframed, the way Papyrus `SetMotionType` does it (ID 125023 on the object's 3D); when it's placed or put back, it goes back to dynamic and is woken so it settles.
 - **Moving:** every frame, the object is moved with the engine's `MoveTo` (ID 118176), the function behind Papyrus `SetPosition` and `SetAngle`, to a point along the camera's view direction.
-- **Each frame:** the plugin's work runs right after the game's player-controls input pass (`PerformInputProcessing`, ID 82442), on the game's thread, once per frame. The hook is a jump at the start of that function rather than its vtable slot, so it coexists with plugins that hook the slot (such as Dialogue Movement Enabler).
-- **Keys:** read from Windows once per frame, only while the game window has focus and no menu is open.
+- **Each frame:** the plugin's work runs right after the game's player-controls input pass (`PerformInputProcessing`, ID 82442), once per frame, inside the game's own frame update. The hook is a jump at the start of that function rather than its vtable slot, so it coexists with plugins that hook the slot (such as Dialogue Movement Enabler).
+- **Keys:** a key counts as pressed when either the game's own input events for that frame or Windows report it down; keys are read only while the game window has focus and no menu is open.
 - **Messages:** HUD notifications through the event Papyrus `Debug.Notification` sends (ID 86800).
 
 Before doing anything, the plugin checks that every Address Library ID it uses exists for the running game version. If one is missing, it logs which and stays inactive.
 
-The log is at `Documents\My Games\Starfield\SFSE\Logs\DropOverhaulSF.log`. It always records each press of the pick-up key and what came of it; `bDebugLog = 1` in the INI adds every key and button press the game receives (device, code and the action it's bound to) and the camera and object positions at each pickup.
+The log is at `Documents\My Games\Starfield\SFSE\Logs\DropOverhaulSF.log`. It always records each press of the pick-up key and what came of it; `bDebugLog = 1` in the INI adds every key and button press the game receives (device, code and the action it's bound to) and the camera and object positions at each pickup. For the first 10 minutes of a session, the log also notes once a minute that the plugin is still running.
 
 ## Not yet
 
