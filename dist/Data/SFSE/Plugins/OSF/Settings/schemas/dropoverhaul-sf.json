@@ -56,8 +56,7 @@
       { "key": "maxDistance", "type": "float", "label": "Farthest distance", "default": 1000.0, "min": 10.0, "max": 10000.0, "step": 50.0 }
     ],
     "General": [
-      { "key": "notifications", "type": "bool", "label": "HUD messages", "default": true, "hint": "Holding, Put back, Can't move that, and so on." },
-      { "key": "debugLog", "type": "bool", "label": "Detailed log", "default": false, "hint": "Extra details in DropOverhaulSF.log, for troubleshooting." }
+      { "key": "notifications", "type": "bool", "label": "HUD messages", "default": true, "hint": "Holding, Put back, Can't move that, and so on." }
     ]
   }
 }

@@ -2,7 +2,7 @@
 
 namespace DROP::Drag
 {
-	// Runs once per frame on the game thread (an SFSE permanent task): reads the keys, picks up,
-	// moves, places or puts back the held object.
-	void OnFrame();
+	// Runs once per frame on the game thread (InputHook): reads the keys, picks up, moves, places or
+	// puts back the held object. a_head is the frame's input events, read only for the debug log.
+	void OnFrame(const RE::InputEvent* a_head);
 }

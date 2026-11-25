@@ -4,7 +4,6 @@
 
 #include "vendor/OSFSettings.h"
 #include "vendor/OSFSettings_Diagnostics.h"
-#include "vendor/OSFSettings_Providers.h"
 
 namespace DROP::OSF
 {
@@ -22,18 +21,10 @@ namespace DROP::OSF
 		};
 
 		OSFSettings::API::Client              g_settings;
-		OSFSettings::API::Providers::Client   g_providers;
 		OSFSettings::API::Diagnostics::Client g_diagnostics;
 		std::vector<Issue>                    g_pendingIssues;  // before Connect; load thread only
 		std::atomic<bool>                     g_dirty{ false };
 		bool                                  g_connected{ false };
-		bool                                  g_deliversPresses{ false };
-
-		constexpr auto kPressCount = static_cast<std::size_t>(Press::kCount);
-		std::array<std::atomic<bool>, kPressCount> g_pressed{};
-
-		// Key setting behind each press action, in Press order.
-		constexpr std::array<const char*, kPressCount> kPressKeys{ "grabKey", "cancelKey", "resetRotationKey", "freezeToggleKey" };
 
 		void Send(const Issue& a_issue)
 		{
@@ -112,7 +103,6 @@ namespace DROP::OSF
 			ReadFloat("minDistance", s.minDistance);
 			ReadFloat("maxDistance", s.maxDistance);
 			ReadBool("notifications", s.notifications);
-			ReadBool("debugLog", s.debugLog);
 			if (s.minDistance > s.maxDistance) {
 				std::swap(s.minDistance, s.maxDistance);
 			}
@@ -124,32 +114,6 @@ namespace DROP::OSF
 		void OnChanged(const char*, const char*, void*) noexcept
 		{
 			g_dirty.store(true);
-		}
-
-		// Runs inline on OSF's input dispatch, for gameplay key-down edges only.
-		void OnKeyPress(const char*, const char*, void* a_context) noexcept
-		{
-			const auto index = reinterpret_cast<std::uintptr_t>(a_context);
-			if (index < kPressCount) {
-				g_pressed[index].store(true);
-			}
-		}
-
-		bool SubscribeKeys()
-		{
-			if (!g_providers.Init()) {
-				REX::INFO("OSF Settings key service not available; polling the keys");
-				return false;
-			}
-			for (std::size_t i = 0; i < kPressCount; ++i) {
-				OSFSettings::API::Subscription subscription{};
-				const auto status = g_providers.SubscribeKey(kModID, kPressKeys[i], OnKeyPress, reinterpret_cast<void*>(i), &subscription);
-				if (status != Status::Ok) {
-					REX::WARN("OSF Settings: could not watch {} (status {}); polling the keys", kPressKeys[i], std::to_underlying(status));
-					return false;  // the subscriptions made so far fire harmlessly into flags nobody reads
-				}
-			}
-			return true;
 		}
 	}
 
@@ -173,7 +137,7 @@ namespace DROP::OSF
 		}
 
 		if (!g_settings.Init()) {
-			REX::INFO("OSF Settings not found; using the INI and polling the keys");
+			REX::INFO("OSF Settings not found; using the INI");
 			return;
 		}
 
@@ -183,10 +147,6 @@ namespace DROP::OSF
 			REX::WARN("OSF Settings: could not subscribe to changes (status {}); values are read once", std::to_underlying(status));
 		}
 		g_connected = true;
-		g_deliversPresses = SubscribeKeys();
-		if (g_deliversPresses) {
-			REX::INFO("Pick up / place, put back, upright and drops/stays keys come from OSF Settings");
-		}
 
 		if (g_settings.IsReady()) {
 			Read();
@@ -200,24 +160,6 @@ namespace DROP::OSF
 	{
 		if (g_connected && g_dirty.exchange(false)) {
 			Read();
-		}
-	}
-
-	bool DeliversPresses()
-	{
-		return g_deliversPresses;
-	}
-
-	bool TakePress(Press a_press)
-	{
-		const auto index = static_cast<std::size_t>(a_press);
-		return index < kPressCount && g_pressed[index].exchange(false);
-	}
-
-	void ClearPresses()
-	{
-		for (auto& pressed : g_pressed) {
-			pressed.store(false);
 		}
 	}
 }

@@ -5,7 +5,6 @@ Unchanged copies of the [OSF Settings](https://github.com/ozooma10/osf-settings-
 | Header | ABI |
 | --- | --- |
 | `OSFSettings.h` | settings 1.0 |
-| `OSFSettings_Providers.h` | providers 1.0 (key presses) |
 | `OSFSettings_Diagnostics.h` | diagnostics 1.0 (Mod Issues) |
 
 Copy them unchanged when updating. The plugin only uses them if `OSFSettings.dll` is loaded; without it, the plugin reads its INI.

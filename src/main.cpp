@@ -1,5 +1,6 @@
 #include "AddressCheck.h"
 #include "Drag.h"
+#include "InputHook.h"
 #include "OSF.h"
 #include "Settings.h"
 
@@ -22,16 +23,9 @@ namespace
 			if (!g_active) {
 				break;
 			}
-			if (const auto* tasks = SFSE::GetTaskInterface()) {
-				// Runs once per frame on the game thread (SFSE's command-processing hook).
-				tasks->AddPermanentTask([]() {
-					DROP::OSF::ApplyChanges();
-					DROP::Drag::OnFrame();
-				});
-				REX::INFO("Ready");
-			} else {
-				REX::ERROR("SFSE task interface unavailable; the plugin stays inactive");
-			}
+			// The frame hook is in place since plugin load; the work starts now that the game data is loaded.
+			DROP::InputHook::SetFrameCallback(&DROP::Drag::OnFrame);
+			REX::INFO("Ready");
 			break;
 		default:
 			break;
@@ -41,7 +35,7 @@ namespace
 
 SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 {
-	SFSE::Init(a_sfse);
+	SFSE::Init(a_sfse, { .trampoline = true, .trampolineSize = 64 });
 
 	REX::INFO("{} {} loading", SFSE::GetPluginName(), SFSE::GetPluginVersion().string());
 	DROP::Settings::Get().Load();
@@ -55,6 +49,14 @@ SFSE_PLUGIN_LOAD(const SFSE::LoadInterface* a_sfse)
 		DROP::OSF::ReportIssue("address-ids", "Drop Overhaul is inactive",
 			"Objects can't be picked up. Missing from the Address Library: " + missing + ".",
 			"Install the Address Library for SFSE Plugins that matches your game version, or update Drop Overhaul.");
+	}
+
+	// Not an SFSE task: those run several times a frame on worker threads, where moving objects isn't safe.
+	if (g_active && !DROP::InputHook::Install()) {
+		g_active = false;
+		DROP::OSF::ReportIssue("frame-hook", "Drop Overhaul is inactive",
+			"Objects can't be picked up: the game's input code isn't what this version expects.",
+			"Check for an update of Drop Overhaul.");
 	}
 
 	const auto* messaging = SFSE::GetMessagingInterface();

@@ -47,12 +47,6 @@ namespace DROP::Drag
 			}
 		};
 
-		// A press action: from OSF Settings' input path when it delivers presses, else polled here.
-		bool Pressed(Edge& a_edge, std::uint32_t a_key, OSF::Press a_press)
-		{
-			return OSF::DeliversPresses() ? OSF::TakePress(a_press) : a_edge.Pressed(a_key);
-		}
-
 		struct HeldObject
 		{
 			Engine::RefPtr ref;
@@ -142,15 +136,33 @@ namespace DROP::Drag
 			return a_view.origin + a_view.forward * a_held.distance + Vec3{ 0.0F, 0.0F, a_held.height };
 		}
 
+		// Debug log: the button presses the game itself received this frame (device, code, action name),
+		// to compare with the keys set for this plugin.
+		void LogButtonPresses(const RE::InputEvent* a_head)
+		{
+			static std::uint32_t logged = 0;
+			for (const auto* event = a_head; event && logged < 500; event = event->next) {
+				if (event->eventType != RE::InputEvent::EventType::kButton) {
+					continue;
+				}
+				const auto* button = static_cast<const RE::ButtonEvent*>(event);
+				if (button->value == 0.0F || button->heldDownSecs > 0.0F) {
+					continue;  // released, or still held from an earlier frame
+				}
+				++logged;
+				const char* action = button->strUserEvent.c_str();
+				REX::INFO("Game input: device {} code {:#x} action '{}'", std::to_underlying(button->deviceType),
+					static_cast<std::uint32_t>(button->idCode), action ? action : "");
+			}
+		}
+
 		void TryPickUp()
 		{
 			const auto& settings = Settings::Get();
 
 			auto ref = Engine::GetCrosshairRef();
 			if (!ref) {
-				if (settings.debugLog) {
-					REX::INFO("Nothing under the crosshair");
-				}
+				REX::INFO("Nothing to pick up: no activation target under the crosshair");
 				Tell("Nothing to pick up there");
 				return;
 			}
@@ -161,11 +173,13 @@ namespace DROP::Drag
 				return;
 			}
 			if (!Engine::ParentCell(object) || !Engine::Loaded3D(object)) {
-				REX::INFO("{:08X} has no cell or no 3D loaded", Engine::FormID(object));
+				REX::INFO("{:08X} has no cell or no 3D loaded; not picked up", Engine::FormID(object));
+				Tell("Can't move that");
 				return;
 			}
 			const auto view = Engine::GetView();
 			if (!view) {
+				REX::INFO("No player camera; not picked up");
 				return;
 			}
 
@@ -251,12 +265,12 @@ namespace DROP::Drag
 			if (Held(settings.lowerKey)) held.height -= move;
 			held.distance = std::clamp(held.distance, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
 
-			if (Pressed(g_reset, settings.resetRotationKey, OSF::Press::ResetRotation)) {
+			if (g_reset.Pressed(settings.resetRotationKey)) {
 				held.pitch = 0.0F;
 				held.roll = 0.0F;
 				held.yaw = 0.0F;  // upright, facing the same way as you (or north, without bRotateWithView)
 			}
-			if (Pressed(g_freeze, settings.freezeToggleKey, OSF::Press::FreezeToggle)) {
+			if (g_freeze.Pressed(settings.freezeToggleKey)) {
 				held.dropOnPlace = !held.dropOnPlace;
 				REX::INFO("{:08X}: {} when placed", Engine::FormID(object), held.dropOnPlace ? "drops" : "stays in place");
 				Tell(held.dropOnPlace ? "Drops when placed" : "Stays where placed");
@@ -268,18 +282,18 @@ namespace DROP::Drag
 		}
 	}
 
-	void OnFrame()
+	void OnFrame(const RE::InputEvent* a_head)
 	{
-		static bool firstFrame = true;
-		if (firstFrame) {
-			firstFrame = false;
-			REX::INFO("Frame task running");
-		}
-
 		const auto now = std::chrono::steady_clock::now();
 		const float seconds = g_lastFrame.time_since_epoch().count() == 0 ? 0.0F :
 		                                                                     std::clamp(std::chrono::duration<float>(now - g_lastFrame).count(), 0.0F, 0.1F);
 		g_lastFrame = now;
+
+		OSF::ApplyChanges();
+		const auto& settings = Settings::Get();
+		if (settings.debugLog) {
+			LogButtonPresses(a_head);
+		}
 
 		const auto* ui = RE::UI::GetSingleton();
 		if (g_held && ui && ui->IsMenuOpen(LoadingMenu())) {
@@ -287,8 +301,6 @@ namespace DROP::Drag
 			g_held.reset();
 			return;
 		}
-
-		const auto& settings = Settings::Get();
 
 		// Log why keys are ignored whenever that changes, so a menu that never closes shows up.
 		static bool        lastFocus = true;
@@ -313,15 +325,11 @@ namespace DROP::Drag
 			g_cancel.Pressed(settings.cancelKey);
 			g_reset.Pressed(settings.resetRotationKey);
 			g_freeze.Pressed(settings.freezeToggleKey);
-			OSF::ClearPresses();
 			return;
 		}
 
-		const bool grabPressed = Pressed(g_grab, settings.grabKey, OSF::Press::Grab);
-		if (grabPressed && settings.debugLog) {
-			REX::INFO("Grab key ({:#04x}) pressed", settings.grabKey);
-		}
-		if (grabPressed) {
+		if (g_grab.Pressed(settings.grabKey)) {
+			REX::INFO("Pick-up key ({:#04x}) pressed: {}", settings.grabKey, g_held ? "placing" : "picking up");
 			if (g_held) {
 				Place();
 			} else {
@@ -330,13 +338,13 @@ namespace DROP::Drag
 			return;
 		}
 		if (!g_held) {
-			// Presses meant for a held object don't wait for the next pickup.
-			OSF::TakePress(OSF::Press::Cancel);
-			OSF::TakePress(OSF::Press::ResetRotation);
-			OSF::TakePress(OSF::Press::FreezeToggle);
+			// Keep the edge states current, so a press made while not holding doesn't act later.
+			g_cancel.Pressed(settings.cancelKey);
+			g_reset.Pressed(settings.resetRotationKey);
+			g_freeze.Pressed(settings.freezeToggleKey);
 			return;
 		}
-		if (Pressed(g_cancel, settings.cancelKey, OSF::Press::Cancel)) {
+		if (g_cancel.Pressed(settings.cancelKey)) {
 			PutBack();
 			return;
 		}

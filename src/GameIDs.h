@@ -60,6 +60,33 @@ namespace DROP::GameID
 	// Same ID as CommonLibSF's ShowHUDMessageEvent::GetEventSource, which has no event layout.
 	inline constexpr REL::ID HUDNotificationSource{ 86800 };
 
+	// ---- Per-frame hook --------------------------------------------------------------------------
+
+	// void (PlayerControls::Manager*, InputEvent* head). The player-controls input pass: runs on the
+	// game thread every frame with that frame's input events (it resets the movement input and adds
+	// the frame time to a timer before reading them). Slot 1 of the PlayerControls::Manager vtable.
+	inline constexpr REL::ID PerformInputProcessing{ 82442 };
+
+	// PlayerControls::Manager vtable (RTTI .?AVManager@PlayerControls@@); slot 1 is the function above.
+	inline constexpr REL::ID PlayerControlsVtable{ 433847 };
+	inline constexpr std::size_t kInputProcessingSlot = 1;
+
+	// First 22 bytes of PerformInputProcessing in 1.16.244. The jump to the hook is written only if
+	// they match. The first 5 (mov [rsp+18h], rbx) have no RIP-relative operand, so the stub that
+	// runs the original function can copy them.
+	inline constexpr std::array<std::uint8_t, 22> kInputProcessingBytes{
+		0x48, 0x89, 0x5C, 0x24, 0x18,  // mov [rsp+18h], rbx
+		0x55,                          // push rbp
+		0x56,                          // push rsi
+		0x57,                          // push rdi
+		0x41, 0x56,                    // push r14
+		0x41, 0x57,                    // push r15
+		0x48, 0x83, 0xEC, 0x20,        // sub rsp, 20h
+		0x48, 0x8B, 0xFA,              // mov rdi, rdx
+		0x48, 0x8B, 0xF1               // mov rsi, rcx
+	};
+	inline constexpr std::size_t kInputProcessingPrologue = 5;
+
 	// ---- Motion types (Papyrus SetMotionType accepts only these two) -----------------------------
 
 	inline constexpr std::uint32_t kMotionDynamic = 1;

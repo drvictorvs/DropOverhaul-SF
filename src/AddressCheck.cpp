@@ -110,6 +110,8 @@ namespace DROP::Address
 				{ GameID::SetMotionType3D.id(), "SetMotionType (3D)" },
 				{ GameID::WakePhysics.id(), "wake physics" },
 				{ GameID::HUDNotificationSource.id(), "HUD notification event source" },
+				{ GameID::PerformInputProcessing.id(), "PlayerControls input pass" },
+				{ GameID::PlayerControlsVtable.id(), "PlayerControls vtable" },
 				{ RE::ID::BSTEventSource::Notify.id(), "BSTEventSource::Notify" },
 				{ RE::ID::UI::Singleton.id(), "UI::Singleton" },
 				{ RE::ID::UI::IsMenuOpen.id(), "UI::IsMenuOpen" },

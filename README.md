@@ -2,9 +2,9 @@
 
 An SFSE plugin for Starfield that lets you pick up a loose object and place it precisely: hold it in front of you, turn it on any axis, push it farther or pull it closer, raise or lower it, then set it down. Pressing E and dragging uses the game's physics grab, which swings and drops objects; this holds them still.
 
-Status: 0.2.0, not yet working in game: 0.1.0 never reacted to the pick-up key. 0.1.1 logs why, and 0.2.0 can take its keys from OSF Settings instead.
+Status: 0.3.0, not yet confirmed in game. Earlier versions never reacted to the pick-up key; 0.3.0 runs on the game's own thread once per frame (0.1.0 and 0.2.0 ran as an SFSE task, which runs several times a frame on worker threads) and logs every pickup attempt.
 
-Requires [SFSE](https://www.nexusmods.com/starfield/mods/106) and [Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256). Built for Starfield 1.16.244. No plugin (ESM/ESP) needed. Optional: [OSF Settings](https://github.com/ozooma10/osf-settings-slim) 1.0.0, for an in-game settings page and its key handling.
+Requires [SFSE](https://www.nexusmods.com/starfield/mods/106) and [Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256). Built for Starfield 1.16.244. No plugin (ESM/ESP) needed. Optional: [OSF Settings](https://github.com/ozooma10/osf-settings-slim) 1.0.0, for an in-game settings page.
 
 ## Controls
 
@@ -29,11 +29,8 @@ All keys, speeds and options are on the plugin's OSF Settings page (Drop Overhau
 
 With OSF Settings installed:
 
-- its values replace the INI's, and changes there apply while the game runs;
-- pick up / place, put back, upright and drops / stays come through OSF's own handling of gameplay key presses, which also accepts mouse buttons, instead of the plugin reading the keyboard;
+- its values replace the INI's (except `bDebugLog`, which is always read from the INI), and changes there apply while the game runs;
 - if the plugin can't run on your game version, it says so in OSF Settings' Mod Issues tab, as well as in the log.
-
-The keys held for turning, moving and fine adjustment are read by the plugin each frame in both cases.
 
 When placed, the object either drops and settles onto what's below it (the default), or stays exactly where you put it, even in mid-air. An object left in mid-air stays there until the area reloads; then physics takes over again.
 
@@ -44,12 +41,13 @@ Characters can't be picked up. Objects without physics (some furniture and stati
 - **What you're looking at:** the game's own view caster, the same target the HUD's activation prompt uses (`ViewCaster`, Address Library ID 82616 reads it).
 - **Holding still:** while held, the object's physics is switched to keyframed, the way Papyrus `SetMotionType` does it (ID 125023 on the object's 3D); when it's placed or put back, it goes back to dynamic and is woken so it settles.
 - **Moving:** every frame, the object is moved with the engine's `MoveTo` (ID 118176), the function behind Papyrus `SetPosition` and `SetAngle`, to a point along the camera's view direction.
-- **Keys:** with OSF Settings, the press actions arrive from its gameplay input handling; the held keys, and without OSF Settings all keys, are read once per frame (an SFSE task), only while the game window has focus and no menu is open.
+- **Each frame:** the plugin's work runs right after the game's player-controls input pass (`PerformInputProcessing`, ID 82442), on the game's thread, once per frame. The hook is a jump at the start of that function rather than its vtable slot, so it coexists with plugins that hook the slot (such as Dialogue Movement Enabler).
+- **Keys:** read from Windows once per frame, only while the game window has focus and no menu is open.
 - **Messages:** HUD notifications through the event Papyrus `Debug.Notification` sends (ID 86800).
 
 Before doing anything, the plugin checks that every Address Library ID it uses exists for the running game version. If one is missing, it logs which and stays inactive.
 
-The log is at `Documents\My Games\Starfield\SFSE\Logs\DropOverhaulSF.log`; `bDebugLog = 1` adds the camera and object positions at each pickup.
+The log is at `Documents\My Games\Starfield\SFSE\Logs\DropOverhaulSF.log`. It always records each press of the pick-up key and what came of it; `bDebugLog = 1` in the INI adds every key and button press the game receives (device, code and the action it's bound to) and the camera and object positions at each pickup.
 
 ## Not yet
 
@@ -88,7 +86,7 @@ Data/SFSE/Plugins/OSF/Settings/schemas/dropoverhaul-sf.json
 
 - Skyrim Thiago (Thiago099), [Object Manipulation Overhaul](https://www.nexusmods.com/skyrimspecialedition/mods/123664) for Skyrim ([source](https://github.com/Thiago099/Object-Manipulation-Overhaul), MIT): the design this follows.
 - Jaxonz Positioner and Cobb Positioner, for the idea of keyboard-driven precise placement.
-- ozooma10, [OSF Settings](https://github.com/ozooma10/osf-settings-slim) (GPL-3.0): the settings page, key handling and Mod Issues, through its SDK in `src/vendor/`.
+- ozooma10, [OSF Settings](https://github.com/ozooma10/osf-settings-slim) (GPL-3.0): the settings page and Mod Issues, through its SDK in `src/vendor/`.
 
 ## License
 
