@@ -25,6 +25,7 @@ namespace
 			}
 			// The frame hook is in place since plugin load; the work starts now that the game data is loaded.
 			DROP::InputHook::SetFrameCallback(&DROP::Drag::OnFrame);
+			DROP::InputHook::SetInputFilter(&DROP::Drag::FilterInput);
 			REX::INFO("Ready");
 			break;
 		default:

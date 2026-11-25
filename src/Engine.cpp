@@ -232,6 +232,7 @@ namespace DROP::Engine
 			shift = At<Vec3>(player3D, NodeWorldTranslate) - Position(player);
 		}
 		view.origin = At<Vec3>(root, NodeWorldTranslate) - shift;
+		view.shift = shift;
 
 		const Vec3 a = Angle(player);
 		const Vec3 lookForward{ std::sin(a.z) * std::cos(a.x), std::cos(a.z) * std::cos(a.x), -std::sin(a.x) };
@@ -243,5 +244,146 @@ namespace DROP::Engine
 		}
 		view.forward = g_calibration.locked ? Candidate(m, g_calibration.candidate) : lookForward;
 		return view;
+	}
+	std::optional<Bounds> GetBounds(RE::TESObjectREFR* a_ref)
+	{
+		using fn_t = const Vec3* (*)(RE::TESObjectREFR*, Vec3*);
+		Vec3        minBuf{};
+		Vec3        maxBuf{};
+		const auto* lo = VFunc<fn_t>(a_ref, VSlotBoundMin)(a_ref, &minBuf);
+		const auto* hi = VFunc<fn_t>(a_ref, VSlotBoundMax)(a_ref, &maxBuf);
+		if (!lo || !hi) {
+			return std::nullopt;
+		}
+		Bounds b{ *lo, *hi };
+		if (b.max.x < b.min.x || b.max.y < b.min.y || b.max.z < b.min.z) {
+			return std::nullopt;
+		}
+		return b;
+	}
+
+	namespace
+	{
+		void* PhysicsWorld()
+		{
+			const auto* player = GetPlayer();
+			void* const cell = player ? ParentCell(player) : nullptr;
+			if (!cell) {
+				return nullptr;
+			}
+			if ((At<std::uint32_t>(cell, CellFlags) & 1) != 0) {
+				void* const extra = At<void*>(cell, CellExtraData);
+				if (!extra) {
+					return nullptr;
+				}
+				static REL::Relocation<void* (*)(void*)> fromExtra{ bhkWorld_FromExtraData };
+				return fromExtra(extra);
+			}
+			static REL::Relocation<void***> exterior{ ExteriorPhysicsWorld };
+			void** const slot = *exterior;
+			return slot ? *slot : nullptr;
+		}
+
+		// Same steps as the ViewCaster's hit loop.
+		RE::TESObjectREFR* RefForBody(void* a_world, std::uint32_t a_body)
+		{
+			if (!a_world || a_body == 0xFFFFFF) {
+				return nullptr;
+			}
+			void* const bodies = reinterpret_cast<std::byte*>(a_world) + WorldBodies;
+			if (VFunc<int (*)(void*, std::uint32_t)>(bodies, BodiesVSlotIsValid)(bodies, a_body) == 0) {
+				return nullptr;
+			}
+			auto* const body = VFunc<std::byte* (*)(void*, std::uint32_t)>(bodies, BodiesVSlotGet)(bodies, a_body);
+			void* const collision = body ? At<void*>(body, BodyCollisionObject) : nullptr;
+			if (!collision) {
+				return nullptr;
+			}
+			auto* const owner = VFunc<std::byte* (*)(void*)>(collision, CollisionVSlotOwner)(collision);
+			auto* const node = owner ? At<RE::NiAVObject*>(owner, OwnerNode) : nullptr;
+			if (!node) {
+				return nullptr;
+			}
+			static REL::Relocation<RE::TESObjectREFR* (*)(RE::NiAVObject*, bool)> refFor3D{ RefFor3D };
+			return refFor3D(node, true);
+		}
+
+		struct alignas(16) Vec4
+		{
+			float x, y, z, w;
+		};
+
+		// One cast from a_from to a_to (physics coordinates). False: nothing hit (or skipped).
+		bool PickOnce(void* a_world, const Vec3& a_from, const Vec3& a_to, std::byte* a_pick)
+		{
+			std::memset(a_pick, 0, PickSize);
+			At<std::uint16_t>(a_pick, PickFilterHint) = 0xFFFF;
+			At<std::uint32_t>(a_pick, PickFilterInfo) = 0;
+			At<std::uint16_t>(a_pick, PickQueryFlags) = 1;
+			At<std::uint8_t>(a_pick, PickQueryFlags + 2) = 0xFB;
+
+			const Vec3 d = a_to - a_from;
+			At<Vec4>(a_pick, PickFrom) = { a_from.x, a_from.y, a_from.z, 0.0F };
+			At<Vec4>(a_pick, PickDirection) = { d.x, d.y, d.z, 1.0F };
+			constexpr float kHuge = 3.40282002e+38F;  // the game's value for a zero component (0x7F7FFFEE)
+			auto inv = [](float a_v) { return a_v == 0.0F ? kHuge : 1.0F / a_v; };
+			At<Vec4>(a_pick, PickInvDirection) = { inv(d.x), inv(d.y), inv(d.z), 1.0F };
+
+			static REL::Relocation<void* (*)(std::byte*)> initResult{ CollisionResult_Init };
+			initResult(a_pick + PickResult);
+
+			At<std::uint64_t>(a_pick, PickLayerMask) = kPickLayerMask;
+			At<void*>(a_pick, PickCollector) = nullptr;
+			At<std::uint32_t>(a_pick, PickFilterInfo2) = 0;
+			At<std::uint8_t>(a_pick, PickFlags) = 1;
+			At<std::uint8_t>(a_pick, PickFlags + 1) = 1;
+
+			static REL::Relocation<bool (*)(void*, std::byte*)> pick{ bhkWorld_Pick };
+			const bool hit = pick(a_world, a_pick);
+			return hit && At<std::uint8_t>(a_pick, PickSkipped) == 0;
+		}
+	}
+
+	std::optional<Hit> CastRay(const View& a_view, float a_length, std::initializer_list<const RE::TESObjectREFR*> a_ignore)
+	{
+		void* const world = PhysicsWorld();
+		if (!world || a_length <= 0.0F) {
+			return std::nullopt;
+		}
+
+		// In physics (scene-graph) coordinates.
+		const Vec3 start = a_view.origin + a_view.shift;
+		const Vec3 end = start + a_view.forward * a_length;
+		Vec3       from = start;
+
+		alignas(16) std::byte pick[PickSize];
+		// A hit on a skipped reference: cast again from just past it, a few times at most.
+		for (int i = 0; i < 6; ++i) {
+			if ((end - from).Dot(a_view.forward) <= 0.01F) {
+				break;
+			}
+			if (!PickOnce(world, from, end, pick)) {
+				return std::nullopt;
+			}
+			const auto&   result = *reinterpret_cast<const Vec4*>(pick + PickResult + ResultPosition);
+			const auto&   normal = *reinterpret_cast<const Vec4*>(pick + PickResult + ResultNormal);
+			const Vec3    position{ result.x, result.y, result.z };
+			const auto    layer = At<std::uint32_t>(pick, PickResult + ResultHitFilter) & 0x7F;
+			auto* const   ref = RefForBody(At<void*>(pick, PickWorld), At<std::uint32_t>(pick, PickResult + ResultHitBody));
+			const bool    seeThrough = layer == 3 || (layer >= 26 && layer <= 28);
+			const bool    ignored = ref && std::ranges::find(a_ignore, ref) != a_ignore.end();
+			if (seeThrough || ignored) {
+				from = position + a_view.forward * 0.02F;
+				continue;
+			}
+			Hit hit;
+			hit.position = position - a_view.shift;
+			hit.normal = Vec3{ normal.x, normal.y, normal.z }.Normalized();
+			hit.distance = (position - start).Length();
+			hit.ref = ref;
+			hit.layer = layer;
+			return hit;
+		}
+		return std::nullopt;
 	}
 }

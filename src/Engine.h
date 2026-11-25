@@ -77,9 +77,31 @@ namespace DROP::Engine
 	{
 		Vec3 origin;
 		Vec3 forward;
+		Vec3 shift;  // scene-graph (and physics) coordinates minus reference coordinates
 		bool firstPerson{ false };
 	};
 	std::optional<View> GetView();
+
+	// The reference's bounds, relative to its position (unrotated). Null if it has none.
+	struct Bounds
+	{
+		Vec3 min;
+		Vec3 max;
+	};
+	std::optional<Bounds> GetBounds(RE::TESObjectREFR* a_ref);
+
+	// The first surface along the view direction, up to a_length meters away, skipping the given
+	// references (and see-through layers, as the activation pick does). Position in reference
+	// coordinates. Uses the physics world of the player's cell.
+	struct Hit
+	{
+		Vec3               position;
+		Vec3               normal;
+		float              distance{ 0.0F };
+		RE::TESObjectREFR* ref{ nullptr };  // borrowed; for comparison and logging only
+		std::uint32_t      layer{ 0 };
+	};
+	std::optional<Hit> CastRay(const View& a_view, float a_length, std::initializer_list<const RE::TESObjectREFR*> a_ignore);
 
 	// Euler angles (radians) helpers, Bethesda convention: yaw 0 = +Y, positive towards +X.
 	inline float YawOf(const Vec3& a_dir) { return std::atan2(a_dir.x, a_dir.y); }

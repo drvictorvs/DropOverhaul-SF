@@ -19,7 +19,7 @@
       { "key": "pitchDownKey", "type": "key", "label": "Tilt back", "default": "NumPad2" },
       { "key": "rollLeftKey", "type": "key", "label": "Roll left", "default": "NumPad7" },
       { "key": "rollRightKey", "type": "key", "label": "Roll right", "default": "NumPad9" },
-      { "key": "resetRotationKey", "type": "key", "label": "Upright", "default": "NumPad5", "hint": "Upright, facing the same way as you." },
+      { "key": "resetRotationKey", "type": "key", "label": "Upright", "default": "NumPad5", "hint": "Upright. Builder mode keeps its facing; hold mode turns it the same way as you." },
       { "key": "pushKey", "type": "key", "label": "Farther", "default": "NumPad+" },
       { "key": "pullKey", "type": "key", "label": "Closer", "default": "NumPad-" },
       { "key": "raiseKey", "type": "key", "label": "Higher", "default": "PgUp" },
@@ -35,13 +35,22 @@
     ],
     "Placement": [
       {
+        "key": "holdMode",
+        "type": "bool",
+        "label": "Hold in front of you",
+        "default": false,
+        "hint": "Off (builder mode): the object sits on whatever you aim at, like the outpost and ship builders. On: it's held in the air in front of you, at the distance you picked it up from."
+      },
+      { "key": "mouseRotateSpeed", "type": "float", "label": "Mouse turning speed (degrees per mouse step)", "default": 0.3, "min": 0.01, "max": 5.0, "step": 0.01, "hint": "While dragging with the left (turn) or right (tilt and roll) mouse button held." },
+      { "key": "wheelRotateStep", "type": "float", "label": "Mouse wheel turn (degrees per notch)", "default": 15.0, "min": 0.0, "max": 90.0, "step": 5.0, "hint": "0 leaves the mouse wheel to the game." },
+      {
         "key": "dropOnPlace",
         "type": "bool",
         "label": "Drop when placed",
         "default": true,
         "hint": "On: physics takes over when you place an object, and it settles onto what's below it. Off: it stays exactly where you placed it, even in mid-air, until the area reloads."
       },
-      { "key": "rotateWithView", "type": "bool", "label": "Turn with you", "default": true, "hint": "The held object turns as you turn, keeping the same side towards you." },
+      { "key": "rotateWithView", "type": "bool", "label": "Turn with you (hold mode)", "default": true, "hint": "In hold mode, the held object turns as you turn, keeping the same side towards you." },
       {
         "key": "allowStatic",
         "type": "bool",

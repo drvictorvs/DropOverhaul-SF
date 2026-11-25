@@ -137,6 +137,32 @@ namespace DROP::Drag
 			return a_key != 0 && (g_gameKeys.Down(a_key) || WindowsDown(a_key));
 		}
 
+		bool IsActivate(const RE::ButtonEvent& a_button)
+		{
+			const char* name = a_button.strUserEvent.c_str();
+			if (!name) {
+				return false;
+			}
+			constexpr std::string_view kActivate = "activate";
+			std::size_t                i = 0;
+			for (; name[i] && i < kActivate.size(); ++i) {
+				if (std::tolower(static_cast<unsigned char>(name[i])) != kActivate[i]) {
+					return false;
+				}
+			}
+			return i == kActivate.size() && name[i] == '\0';
+		}
+
+		// Makes the game ignore a button event: no action name, and marked disabled (as Dialogue
+		// Movement Enabler marks the movement keys it doesn't allow).
+		void Take(RE::ButtonEvent& a_button)
+		{
+			// Never freed: avoids releasing strings after the game's string pool is gone at exit.
+			static const auto* none = new RE::BSFixedString("");
+			a_button.strUserEvent = *none;
+			reinterpret_cast<std::uint8_t&>(a_button.disabled) = 4;
+		}
+
 		// Acts on the press, not while held.
 		struct Edge
 		{
@@ -152,17 +178,38 @@ namespace DROP::Drag
 
 		struct HeldObject
 		{
-			Engine::RefPtr ref;
-			Vec3           originalPosition;
-			Vec3           originalAngle;
-			bool           keyframedByUs{ false };
-			bool           dropOnPlace{ true };
-			float          distance{ 1.5F };   // meters
-			float          height{ 0.0F };
-			float          yaw{ 0.0F };  // relative to the view's yaw when bRotateWithView, else absolute
-			float          pitch{ 0.0F };
-			float          roll{ 0.0F };
+			Engine::RefPtr                ref;
+			Vec3                          originalPosition;
+			Vec3                          originalAngle;
+			std::optional<Engine::Bounds> bounds;
+			bool                          builder{ true };  // sits on what you aim at; else held in front of you
+			bool                          keyframedByUs{ false };
+			bool                          dropOnPlace{ true };
+			bool                          loggedAim{ false };
+			bool                          loggedNoSurface{ false };
+			float                         distance{ 1.5F };  // meters
+			float                         height{ 0.0F };    // meters, added to the target height
+			float                         yaw{ 0.0F };       // hold mode with bRotateWithView: relative to the view's yaw; else absolute
+			float                         pitch{ 0.0F };
+			float                         roll{ 0.0F };
 		};
+
+		// ---- Input taken from the game while holding (FilterInput) ------------------------------
+
+		struct Captured
+		{
+			bool         place{ false };         // an Activate press
+			bool         activateDown{ false };
+			bool         turnDown{ false };      // left mouse button: drag to turn
+			bool         tiltDown{ false };      // right mouse button: drag to tilt and roll
+			bool         wheelUpLast{ false };
+			bool         wheelDownLast{ false };
+			int          wheel{ 0 };             // notches since the frame update, + = up
+			std::int32_t dx{ 0 };                // mouse movement since the frame update, while a button is held
+			std::int32_t dy{ 0 };
+		};
+		Captured g_captured;
+		bool     g_capturing = false;  // set by the frame update: an object is held and keys are active
 
 		std::optional<HeldObject>             g_held;
 		Edge                                  g_grab;
@@ -230,13 +277,64 @@ namespace DROP::Drag
 
 		Vec3 TargetAngle(const HeldObject& a_held, const Engine::View& a_view)
 		{
-			const float yaw = Settings::Get().rotateWithView ? Engine::YawOf(a_view.forward) + a_held.yaw : a_held.yaw;
+			const bool  withView = !a_held.builder && Settings::Get().rotateWithView;
+			const float yaw = withView ? Engine::YawOf(a_view.forward) + a_held.yaw : a_held.yaw;
 			return { WrapAngle(a_held.pitch), WrapAngle(a_held.roll), WrapAngle(yaw) };
 		}
 
+		// Hold mode: at the held distance along the view, plus the height offset.
 		Vec3 TargetPosition(const HeldObject& a_held, const Engine::View& a_view)
 		{
 			return a_view.origin + a_view.forward * a_held.distance + Vec3{ 0.0F, 0.0F, a_held.height };
+		}
+
+		// Builder mode: on the surface hit, moved out by the object's bounds so it rests against it
+		// instead of sinking into it (bounds are unrotated, so this is exact for an upright object).
+		Vec3 OnSurface(const HeldObject& a_held, const Engine::Hit& a_hit)
+		{
+			Vec3 p = a_hit.position;
+			if (!a_held.bounds) {
+				return p + a_hit.normal * 0.02F;
+			}
+			const auto& b = *a_held.bounds;
+			if (a_hit.normal.z >= 0.7F) {
+				p.z -= b.min.z;  // floor, table: bottom on the surface
+			} else if (a_hit.normal.z <= -0.7F) {
+				p.z -= b.max.z;  // ceiling: top against it
+			} else {
+				// Wall: centered on the aim point, its widest horizontal extent out from the wall.
+				const float extent = std::max({ std::abs(b.min.x), std::abs(b.max.x), std::abs(b.min.y), std::abs(b.max.y) });
+				const Vec3  out = Vec3{ a_hit.normal.x, a_hit.normal.y, 0.0F }.Normalized();
+				p = p + out * extent;
+				p.z -= (b.min.z + b.max.z) * 0.5F;
+			}
+			return p;
+		}
+
+		Vec3 BuilderPosition(HeldObject& a_held, const Engine::View& a_view)
+		{
+			const auto& settings = Settings::Get();
+			auto* const object = a_held.ref.get();
+			const auto  hit = Engine::CastRay(a_view, static_cast<float>(settings.maxDistance), { object, Engine::GetPlayer() });
+			if (!hit) {
+				if (!a_held.loggedNoSurface) {
+					a_held.loggedNoSurface = true;
+					REX::INFO("  no surface within {:.1f} m: holding it at {:.2f} m", settings.maxDistance, a_held.distance);
+				}
+				return a_view.origin + a_view.forward * a_held.distance + Vec3{ 0.0F, 0.0F, a_held.height };
+			}
+			a_held.distance = std::clamp(hit->distance, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
+			const Vec3 p = OnSurface(a_held, *hit) + Vec3{ 0.0F, 0.0F, a_held.height };
+			if (!a_held.loggedAim || settings.debugLog) {
+				static std::uint32_t count = 0;
+				if (!a_held.loggedAim || ++count % 60 == 0) {
+					REX::INFO("  aiming at {} (layer {}), {:.2f} m away, normal ({:.2f}, {:.2f}, {:.2f}); object to ({:.2f}, {:.2f}, {:.2f})",
+						hit->ref ? std::format("{:08X}", Engine::FormID(hit->ref)) : std::string("a surface"), hit->layer, hit->distance,
+						hit->normal.x, hit->normal.y, hit->normal.z, p.x, p.y, p.z);
+				}
+				a_held.loggedAim = true;
+			}
+			return p;
 		}
 
 		void TryPickUp()
@@ -278,22 +376,36 @@ namespace DROP::Drag
 				return;
 			}
 
-			// Start at the object's current distance, so it doesn't jump towards or away from you.
-			const float away = (held.originalPosition - view->origin).Length();
-			held.distance = std::clamp(away, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
+			held.builder = !settings.holdMode;
+			held.bounds = Engine::GetBounds(object);
+
+			// Start where the object is: at its distance along the view, and (hold mode) at its height
+			// relative to that line, so it doesn't jump up to eye level.
+			const Vec3  rel = held.originalPosition - view->origin;
+			const float away = rel.Length();
+			held.distance = std::clamp(rel.Dot(view->forward), static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
+			held.height = held.builder ? 0.0F : rel.z - view->forward.z * held.distance;
 			held.pitch = held.originalAngle.x;
 			held.roll = held.originalAngle.y;
-			held.yaw = settings.rotateWithView ? WrapAngle(held.originalAngle.z - Engine::YawOf(view->forward)) : held.originalAngle.z;
+			held.yaw = !held.builder && settings.rotateWithView ? WrapAngle(held.originalAngle.z - Engine::YawOf(view->forward)) : held.originalAngle.z;
 
-			REX::INFO("Picked up {:08X}{}, {:.2f} m away (held at {:.2f} m)", Engine::FormID(object),
-				held.keyframedByUs ? "" : " (no physics)", away, held.distance);
+			REX::INFO("Picked up {:08X}{}, {:.2f} m away ({} mode)", Engine::FormID(object),
+				held.keyframedByUs ? "" : " (no physics)", away, held.builder ? "builder" : "hold");
+			if (held.bounds) {
+				REX::INFO("  bounds ({:.2f}, {:.2f}, {:.2f}) to ({:.2f}, {:.2f}, {:.2f})", held.bounds->min.x, held.bounds->min.y,
+					held.bounds->min.z, held.bounds->max.x, held.bounds->max.y, held.bounds->max.z);
+			}
 			if (settings.debugLog) {
 				REX::INFO("  view origin ({:.1f}, {:.1f}, {:.1f}) forward ({:.3f}, {:.3f}, {:.3f}) first person {}; object at ({:.1f}, {:.1f}, {:.1f})",
 					view->origin.x, view->origin.y, view->origin.z, view->forward.x, view->forward.y, view->forward.z, view->firstPerson,
 					held.originalPosition.x, held.originalPosition.y, held.originalPosition.z);
 			}
 
-			Tell(held.dropOnPlace ? "Holding: drops when placed" : "Holding: stays where placed");
+			if (held.builder) {
+				Tell(held.dropOnPlace ? "Placing: E to set down, Delete to put back" : "Placing (stays in place): E to set down, Delete to put back");
+			} else {
+				Tell(held.dropOnPlace ? "Holding: drops when placed" : "Holding: stays where placed");
+			}
 			held.ref = std::move(ref);
 			g_held = std::move(held);
 		}
@@ -307,6 +419,7 @@ namespace DROP::Drag
 			}
 			REX::INFO("Placed {:08X}{}", Engine::FormID(object), drop ? "" : " (stays in place)");
 			g_held.reset();
+			g_capturing = false;
 		}
 
 		void PutBack()
@@ -319,9 +432,10 @@ namespace DROP::Drag
 			REX::INFO("Put back {:08X}", Engine::FormID(object));
 			Tell("Put back");
 			g_held.reset();
+			g_capturing = false;
 		}
 
-		void UpdateHeld(float a_seconds)
+		void UpdateHeld(float a_seconds, const Captured& a_captured)
 		{
 			const auto& settings = Settings::Get();
 			auto&       held = *g_held;
@@ -330,6 +444,7 @@ namespace DROP::Drag
 			if (!Engine::Loaded3D(object) || !Engine::ParentCell(object)) {
 				REX::INFO("{:08X} unloaded while held; let go", Engine::FormID(object));
 				g_held.reset();
+			g_capturing = false;
 				return;
 			}
 
@@ -343,16 +458,31 @@ namespace DROP::Drag
 			if (Held(settings.pitchDownKey)) held.pitch += turn;
 			if (Held(settings.rollLeftKey)) held.roll -= turn;
 			if (Held(settings.rollRightKey)) held.roll += turn;
-			if (Held(settings.pushKey)) held.distance += move;
-			if (Held(settings.pullKey)) held.distance -= move;
+			if (!held.builder) {
+				if (Held(settings.pushKey)) held.distance += move;
+				if (Held(settings.pullKey)) held.distance -= move;
+			}
 			if (Held(settings.raiseKey)) held.height += move;
 			if (Held(settings.lowerKey)) held.height -= move;
 			held.distance = std::clamp(held.distance, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
 
+			// Mouse: drag with the left button to turn, with the right to tilt (up/down) and roll
+			// (left/right); the wheel turns in steps.
+			const float perCount = static_cast<float>(settings.mouseRotateSpeed) * kDegToRad * scale;
+			if (a_captured.tiltDown) {
+				held.pitch += static_cast<float>(a_captured.dy) * perCount;
+				held.roll += static_cast<float>(a_captured.dx) * perCount;
+			} else {
+				held.yaw += static_cast<float>(a_captured.dx) * perCount;
+			}
+			held.yaw -= static_cast<float>(a_captured.wheel) * static_cast<float>(settings.wheelRotateStep) * kDegToRad;
+
 			if (g_reset.Pressed(settings.resetRotationKey)) {
 				held.pitch = 0.0F;
 				held.roll = 0.0F;
-				held.yaw = 0.0F;  // upright, facing the same way as you (or north, without bRotateWithView)
+				if (!held.builder) {
+					held.yaw = 0.0F;  // facing the same way as you (or north, without bRotateWithView)
+				}
 			}
 			if (g_freeze.Pressed(settings.freezeToggleKey)) {
 				held.dropOnPlace = !held.dropOnPlace;
@@ -361,7 +491,8 @@ namespace DROP::Drag
 			}
 
 			if (const auto view = Engine::GetView()) {
-				Engine::MoveTo(object, TargetPosition(held, *view), TargetAngle(held, *view));
+				const Vec3 position = held.builder ? BuilderPosition(held, *view) : TargetPosition(held, *view);
+				Engine::MoveTo(object, position, TargetAngle(held, *view));
 			}
 		}
 	}
@@ -383,6 +514,7 @@ namespace DROP::Drag
 		if (g_held && ui && ui->IsMenuOpen(LoadingMenu())) {
 			REX::INFO("Loading: let go of {:08X}", Engine::FormID(g_held->ref.get()));
 			g_held.reset();
+			g_capturing = false;
 			return;
 		}
 
@@ -405,6 +537,13 @@ namespace DROP::Drag
 			}
 			lastBlocker = blocker;
 		}
+		g_capturing = g_held && focus && !blocker;
+		const Captured captured = g_captured;
+		g_captured.place = false;
+		g_captured.wheel = 0;
+		g_captured.dx = 0;
+		g_captured.dy = 0;
+
 		if (!focus || blocker) {
 			// Forget key states, so a key pressed in a menu doesn't act when it closes.
 			g_grab.Pressed(settings.grabKey);
@@ -436,6 +575,84 @@ namespace DROP::Drag
 			PutBack();
 			return;
 		}
-		UpdateHeld(seconds);
+		if (captured.place) {
+			REX::INFO("Activate pressed: placing");
+			Place();
+			return;
+		}
+		UpdateHeld(seconds, captured);
+	}
+
+	void FilterInput(RE::InputEvent* a_head)
+	{
+		// While holding, take the events. Once let go, keep taking a mouse button or Activate that's
+		// still down, so its release doesn't reach the game without its press.
+		const bool active = g_capturing;
+		auto&      c = g_captured;
+		if (!active && !c.turnDown && !c.tiltDown && !c.activateDown) {
+			c.wheelUpLast = false;
+			c.wheelDownLast = false;
+			return;
+		}
+		const bool wheelOn = active && Settings::Get().wheelRotateStep > 0.0;
+		bool       wheelUp = false;
+		bool       wheelDown = false;
+
+		for (auto* event = a_head; event; event = event->next) {
+			if (event->eventType == RE::InputEvent::EventType::kButton) {
+				auto&      button = *static_cast<RE::ButtonEvent*>(event);
+				const bool down = button.value != 0.0F;
+				if (IsActivate(button) && (active || c.activateDown)) {
+					if (active && down && !c.activateDown) {
+						c.place = true;
+					}
+					c.activateDown = down;
+					Take(button);
+				} else if (button.deviceType == RE::InputEvent::DeviceType::kMouse) {
+					switch (button.idCode) {
+					case 0:  // left
+						if (active || c.turnDown) {
+							c.turnDown = down;
+							Take(button);
+						}
+						break;
+					case 1:  // right
+						if (active || c.tiltDown) {
+							c.tiltDown = down;
+							Take(button);
+						}
+						break;
+					case 0x800:  // wheel up
+					case 0x900:  // wheel down
+						if (wheelOn) {
+							(button.idCode == 0x800 ? wheelUp : wheelDown) = true;
+							Take(button);
+						}
+						break;
+					default:
+						break;
+					}
+				}
+			} else if (event->eventType == RE::InputEvent::EventType::kMouseMove && active && (c.turnDown || c.tiltDown)) {
+				// MouseMoveEvent: IDEvent, then the movement in mouse counts (game code: ID 124081).
+				auto* const raw = reinterpret_cast<std::byte*>(event);
+				auto&       x = *reinterpret_cast<std::int32_t*>(raw + 0x38);
+				auto&       y = *reinterpret_cast<std::int32_t*>(raw + 0x3C);
+				c.dx += x;
+				c.dy += y;
+				x = 0;  // the camera doesn't turn while dragging
+				y = 0;
+			}
+		}
+
+		// One notch per scroll, even if the game sends it over two frames.
+		if (wheelUp && !c.wheelUpLast) {
+			++c.wheel;
+		}
+		if (wheelDown && !c.wheelDownLast) {
+			--c.wheel;
+		}
+		c.wheelUpLast = wheelUp;
+		c.wheelDownLast = wheelDown;
 	}
 }

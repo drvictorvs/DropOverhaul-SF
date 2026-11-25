@@ -24,6 +24,9 @@ namespace DROP
 		std::uint32_t freezeToggleKey{ 0x6E };  // numpad .: switch between dropping and staying in place
 
 		// [Placement]
+		bool   holdMode{ false };        // false: builder mode (the object sits on what you aim at); true: held in front of you
+		double mouseRotateSpeed{ 0.3 };  // degrees per mouse count, while dragging with a mouse button held
+		double wheelRotateStep{ 15.0 };  // degrees per mouse-wheel notch
 		bool   dropOnPlace{ true };      // true: physics takes over when placed (it settles); false: stays exactly where placed
 		bool   rotateWithView{ true };   // the object turns with you, keeping the same side towards you
 		bool   allowStatic{ false };     // also move objects without physics (furniture, clutter statics)

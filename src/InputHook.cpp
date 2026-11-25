@@ -8,8 +8,29 @@ namespace DROP::InputHook
 	{
 		using Process_t = void (*)(void* a_controls, RE::InputEvent* a_head);
 
-		Process_t            g_original = nullptr;
-		std::atomic<FrameFn> g_frame{ nullptr };
+		Process_t             g_original = nullptr;
+		std::atomic<FrameFn>  g_frame{ nullptr };
+		std::atomic<FilterFn> g_filter{ nullptr };
+
+		template <class F>
+		void Guarded(const char* a_what, F&& a_fn)
+		{
+			try {
+				a_fn();
+			} catch (const std::exception& e) {
+				static bool logged = false;
+				if (!logged) {
+					logged = true;
+					REX::ERROR("{} failed: {}", a_what, e.what());
+				}
+			} catch (...) {
+				static bool logged = false;
+				if (!logged) {
+					logged = true;
+					REX::ERROR("{} failed", a_what);
+				}
+			}
+		}
 
 		// Startup check that the hook runs as expected: about once a frame.
 		void CheckRate()
@@ -50,6 +71,10 @@ namespace DROP::InputHook
 
 		void Hook(void* a_controls, RE::InputEvent* a_head)
 		{
+			if (const auto filter = g_filter.load(std::memory_order_acquire)) {
+				Guarded("Input filter", [&]() { filter(a_head); });
+			}
+
 			g_original(a_controls, a_head);
 
 			const auto frame = g_frame.load(std::memory_order_acquire);
@@ -57,21 +82,7 @@ namespace DROP::InputHook
 				return;
 			}
 			CheckRate();
-			try {
-				frame(a_head);
-			} catch (const std::exception& e) {
-				static bool logged = false;
-				if (!logged) {
-					logged = true;
-					REX::ERROR("Frame update failed: {}", e.what());
-				}
-			} catch (...) {
-				static bool logged = false;
-				if (!logged) {
-					logged = true;
-					REX::ERROR("Frame update failed");
-				}
-			}
+			Guarded("Frame update", [&]() { frame(a_head); });
 		}
 
 		bool InstallJump(std::uintptr_t a_target)
@@ -126,5 +137,10 @@ namespace DROP::InputHook
 	void SetFrameCallback(FrameFn a_fn)
 	{
 		g_frame.store(a_fn, std::memory_order_release);
+	}
+
+	void SetInputFilter(FilterFn a_fn)
+	{
+		g_filter.store(a_fn, std::memory_order_release);
 	}
 }

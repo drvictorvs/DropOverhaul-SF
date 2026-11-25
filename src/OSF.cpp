@@ -94,6 +94,9 @@ namespace DROP::OSF
 			ReadKey("lowerKey", s.lowerKey);
 			ReadKey("fineKey", s.fineKey);
 			ReadKey("freezeToggleKey", s.freezeToggleKey);
+			ReadBool("holdMode", s.holdMode);
+			ReadFloat("mouseRotateSpeed", s.mouseRotateSpeed);
+			ReadFloat("wheelRotateStep", s.wheelRotateStep);
 			ReadBool("dropOnPlace", s.dropOnPlace);
 			ReadBool("rotateWithView", s.rotateWithView);
 			ReadBool("allowStatic", s.allowStatic);
@@ -106,8 +109,8 @@ namespace DROP::OSF
 			if (s.minDistance > s.maxDistance) {
 				std::swap(s.minDistance, s.maxDistance);
 			}
-			REX::INFO("Settings from OSF Settings: pick-up key {:#04x}, drop when placed {}, turn with you {}, objects without physics {}",
-				s.grabKey, s.dropOnPlace, s.rotateWithView, s.allowStatic);
+			REX::INFO("Settings from OSF Settings: pick-up key {:#04x}, {} mode, drop when placed {}, turn with you {}, objects without physics {}",
+				s.grabKey, s.holdMode ? "hold" : "builder", s.dropOnPlace, s.rotateWithView, s.allowStatic);
 		}
 
 		// Runs on an SFSE task, without a main-thread guarantee: only flag the change here.

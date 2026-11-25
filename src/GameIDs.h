@@ -87,6 +87,29 @@ namespace DROP::GameID
 	};
 	inline constexpr std::size_t kInputProcessingPrologue = 5;
 
+	// ---- Physics ray cast (what the ViewCaster's activation pick, ID 82620, does) ----------------
+
+	// bool (bhkWorld*, bhkPickData*). Casts the pick data's ray against the physics world; true when
+	// something was hit. With no collector of its own (+0xF0 null), the closest hit is copied into
+	// the pick data's result (+0x70).
+	inline constexpr REL::ID bhkWorld_Pick{ 125018 };
+
+	// hknpCollisionResult* (hknpCollisionResult*): sets a result to "no hit" (fraction FLT_MAX,
+	// invalid body IDs). The ViewCaster runs it on the pick data's result before casting.
+	inline constexpr REL::ID CollisionResult_Init{ 36866 };
+
+	// bhkWorld* (ExtraDataList*): an interior cell's physics world, from its extra data (cell + 0x50).
+	inline constexpr REL::ID bhkWorld_FromExtraData{ 44831 };
+
+	// bhkWorld** (global pointer to a pointer): the physics world outside interiors.
+	inline constexpr REL::ID ExteriorPhysicsWorld{ 938080 };
+
+	// TESObjectREFR* (NiAVObject*, bool): the reference a 3D node belongs to.
+	inline constexpr REL::ID RefFor3D{ 63285 };
+
+	// Layers the ViewCaster's ray hits (its usual mask; the other one it uses drops bit 11).
+	inline constexpr std::uint64_t kPickLayerMask = 0x37C0EEF7E;
+
 	// ---- Motion types (Papyrus SetMotionType accepts only these two) -----------------------------
 
 	inline constexpr std::uint32_t kMotionDynamic = 1;
@@ -109,13 +132,16 @@ namespace DROP::GameID
 		// LOADED_REF_DATA
 		inline constexpr std::size_t LoadedData3D = 0x08;  // NiAVObject*
 
-		// TESObjectREFR vtable slots (game code: SetMotionTypeFunctor)
+		// TESObjectREFR vtable slots (game code: SetMotionTypeFunctor; Papyrus GetHeight, ID 118303)
 		inline constexpr std::size_t VSlotGet3D = 0xAC;      // NiPointer<NiAVObject> Get3D() (returned through a hidden pointer)
 		inline constexpr std::size_t VSlotAddChange = 0x17;  // bool AddChange(std::uint32_t)
+		inline constexpr std::size_t VSlotBoundMin = 0xB4;   // NiPoint3* (NiPoint3* out): bounds, relative to the reference
+		inline constexpr std::size_t VSlotBoundMax = 0xB5;
 		inline constexpr std::uint32_t ChangeHavokMoved = 4;   // what SetMotionTypeFunctor passes
 
-		// TESObjectCELL (game code: SetPosition apply function)
+		// TESObjectCELL (game code: SetPosition apply function; ViewCaster users for the extra data)
 		inline constexpr std::size_t CellFlags = 0x48;      // bit 0 = interior
+		inline constexpr std::size_t CellExtraData = 0x50;  // ExtraDataList*; holds an interior's physics world
 		inline constexpr std::size_t CellWorldSpace = 0x110;  // TESWorldSpace*, for exterior cells
 
 		// NiAVObject (game code: SetMotionTypeFunctor's physics walk, camera code)
@@ -127,6 +153,36 @@ namespace DROP::GameID
 		inline constexpr std::size_t NodeVSlotStopWalk = 14;         // non-null: stop looking further up
 		inline constexpr std::size_t PhysicsHolderOwner = 0x180;     // ref-counted (count at +8)
 		inline constexpr std::size_t PhysicsOwnerKeyframed = 0x70;   // object whose vtable slot 8 runs after keyframing
+
+		// bhkPickData, 0x108 bytes (game code: the ViewCaster's pick, ID 82620, and bhkWorld::Pick)
+		inline constexpr std::size_t PickFilterHint = 0x10;     // u16, 0xFFFF
+		inline constexpr std::size_t PickFilterInfo = 0x14;     // u32 collision filter info (group << 16 | layer)
+		inline constexpr std::size_t PickQueryFlags = 0x20;     // u16 1, then u8 0xFB at +0x22
+		inline constexpr std::size_t PickFrom = 0x30;           // hkVector4
+		inline constexpr std::size_t PickDirection = 0x40;      // hkVector4: to - from, w = 1
+		inline constexpr std::size_t PickInvDirection = 0x50;   // hkVector4: 1 / direction (FLT_MAX for 0), w = 1
+		inline constexpr std::size_t PickResult = 0x70;         // hknpCollisionResult (0x70 bytes)
+		inline constexpr std::size_t PickWorld = 0xE0;          // set by Pick: the hknp world wrapper
+		inline constexpr std::size_t PickLayerMask = 0xE8;      // u64: layers the ray hits
+		inline constexpr std::size_t PickCollector = 0xF0;      // null: closest hit
+		inline constexpr std::size_t PickFilterInfo2 = 0xFC;    // u32, the same filter info
+		inline constexpr std::size_t PickFlags = 0x100;         // u8 1, u8 1
+		inline constexpr std::size_t PickSkipped = 0x102;       // u8 out: the pick was skipped this frame
+		inline constexpr std::size_t PickSize = 0x110;
+
+		// hknpCollisionResult (game code: its init, ID 36866)
+		inline constexpr std::size_t ResultPosition = 0x00;     // hkVector4
+		inline constexpr std::size_t ResultNormal = 0x10;       // hkVector4
+		inline constexpr std::size_t ResultHitBody = 0x48;      // u32 body ID (0xFFFFFF = none)
+		inline constexpr std::size_t ResultHitFilter = 0x5C;    // u32 collision filter info; layer = & 0x7F
+
+		// From a hit body to its reference (game code: the ViewCaster's hit loop)
+		inline constexpr std::size_t WorldBodies = 0x20;            // object in the hknp world wrapper
+		inline constexpr std::size_t BodiesVSlotIsValid = 11;       // int (std::uint32_t bodyId)
+		inline constexpr std::size_t BodiesVSlotGet = 14;           // body* (std::uint32_t bodyId)
+		inline constexpr std::size_t BodyCollisionObject = 0x98;    // collision object
+		inline constexpr std::size_t CollisionVSlotOwner = 0x138 / 8;  // returns an object with the 3D at + 0x10
+		inline constexpr std::size_t OwnerNode = 0x10;
 
 		// TESCamera / PlayerCamera (game code: StartDialogueCamera, ID 113405)
 		inline constexpr std::size_t CameraRoot = 0x08;          // NiNode*

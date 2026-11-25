@@ -10,10 +10,15 @@
 namespace DROP::InputHook
 {
 	using FrameFn = void (*)(const RE::InputEvent* a_head);
+	using FilterFn = void (*)(RE::InputEvent* a_head);
 
 	// At plugin load. Needs the SFSE trampoline. Returns false if nothing could be installed.
 	bool Install();
 
 	// Starts (or, with nullptr, stops) calling a_fn after each input pass.
 	void SetFrameCallback(FrameFn a_fn);
+
+	// Starts (or stops) calling a_fn before each input pass, with the events the game is about to
+	// act on: it may change them (rename, disable, zero mouse movement) so the game ignores them.
+	void SetInputFilter(FilterFn a_fn);
 }
