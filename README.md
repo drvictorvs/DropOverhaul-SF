@@ -71,7 +71,7 @@ xmake f -c -m releasedbg
 xmake build -v
 ```
 
-`DropOverhaulSF.dll` and `.pdb` land in `build\windows\x64\releasedbg\`. With `XSE_SF_MODS_PATH` (or `XSE_SF_GAME_PATH`) set, `xmake install` copies them, the INI and the OSF Settings schema into place. Otherwise, make a mod with:
+`DropOverhaulSF.dll` and `.pdb` land in `build\windows\x64\releasedbg\`, and each build also copies them to `dist\Data\SFSE\Plugins\`, next to the INI, so `dist\Data` holds the complete mod (git ignores the copies). With `XSE_SF_MODS_PATH` (or `XSE_SF_GAME_PATH`) set, `xmake install` copies them, the INI and the OSF Settings schema into place. Otherwise, make a mod with:
 
 ```
 Data/SFSE/Plugins/DropOverhaulSF.dll

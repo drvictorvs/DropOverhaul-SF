@@ -31,4 +31,16 @@ target("DropOverhaulSF", function()
 
     add_installfiles("dist/Data/SFSE/Plugins/DropOverhaulSF.ini", { prefixdir = "SFSE/Plugins" })
     add_installfiles("dist/Data/SFSE/Plugins/OSF/Settings/schemas/dropoverhaul-sf.json", { prefixdir = "SFSE/Plugins/OSF/Settings/schemas" })
+
+    -- After each build, copy the plugin next to its INI in dist/, so dist/Data is the complete mod.
+    after_build(function(target)
+        local dir = path.join(os.projectdir(), "dist", "Data", "SFSE", "Plugins")
+        os.mkdir(dir)
+        os.cp(target:targetfile(), dir)
+        local pdb = target:symbolfile()
+        if pdb and os.isfile(pdb) then
+            os.cp(pdb, dir)
+        end
+        cprint("${dim}copied %s to %s", path.filename(target:targetfile()), path.relative(dir, os.projectdir()))
+    end)
 end)
