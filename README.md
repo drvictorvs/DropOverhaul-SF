@@ -2,7 +2,7 @@
 
 An SFSE plugin for Starfield that lets you pick up a loose object and place it precisely: hold it in front of you, turn it on any axis, push it farther or pull it closer, raise or lower it, then set it down. Pressing E and dragging uses the game's physics grab, which swings and drops objects; this holds them still.
 
-Status: 0.3.1, not yet confirmed in game. Earlier versions never reacted to the pick-up key. Since 0.3.0 the plugin runs once per frame inside the game's frame update (0.1.0 and 0.2.0 ran as an SFSE task, which runs several times a frame in parallel) and logs every pickup attempt; 0.3.1 also reads the keys from the game's own input events.
+Status: 0.4.0, in testing. Picking up works since 0.3.1; up to 0.3.1 the distances and moving speed assumed Skyrim's units, so held objects were carried 40 m away. 0.4.0 measures them in meters, Starfield's unit; settings saved from earlier versions for those three are not carried over.
 
 Requires [SFSE](https://www.nexusmods.com/starfield/mods/106) and [Address Library for SFSE Plugins](https://www.nexusmods.com/starfield/mods/3256). Built for Starfield 1.16.244. No plugin (ESM/ESP) needed. Optional: [OSF Settings](https://github.com/ozooma10/osf-settings-slim) 1.0.0, for an in-game settings page.
 

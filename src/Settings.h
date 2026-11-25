@@ -28,10 +28,10 @@ namespace DROP
 		bool   rotateWithView{ true };   // the object turns with you, keeping the same side towards you
 		bool   allowStatic{ false };     // also move objects without physics (furniture, clutter statics)
 		double rotateSpeed{ 90.0 };      // degrees per second
-		double moveSpeed{ 150.0 };       // units per second (distance and height)
+		double moveSpeed{ 1.0 };         // meters per second (distance and height); Starfield's unit is the meter
 		double fineMultiplier{ 0.2 };
-		double minDistance{ 40.0 };
-		double maxDistance{ 1000.0 };
+		double minDistance{ 0.5 };       // meters from the camera
+		double maxDistance{ 10.0 };
 
 		// [General]
 		bool notifications{ true };  // HUD messages: picked up, placed, can't move that

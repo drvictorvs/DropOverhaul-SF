@@ -157,7 +157,7 @@ namespace DROP::Drag
 			Vec3           originalAngle;
 			bool           keyframedByUs{ false };
 			bool           dropOnPlace{ true };
-			float          distance{ 150.0F };
+			float          distance{ 1.5F };   // meters
 			float          height{ 0.0F };
 			float          yaw{ 0.0F };  // relative to the view's yaw when bRotateWithView, else absolute
 			float          pitch{ 0.0F };
@@ -279,13 +279,14 @@ namespace DROP::Drag
 			}
 
 			// Start at the object's current distance, so it doesn't jump towards or away from you.
-			held.distance = std::clamp((held.originalPosition - view->origin).Length(),
-				static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
+			const float away = (held.originalPosition - view->origin).Length();
+			held.distance = std::clamp(away, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
 			held.pitch = held.originalAngle.x;
 			held.roll = held.originalAngle.y;
 			held.yaw = settings.rotateWithView ? WrapAngle(held.originalAngle.z - Engine::YawOf(view->forward)) : held.originalAngle.z;
 
-			REX::INFO("Picked up {:08X}{} at distance {:.0f}", Engine::FormID(object), held.keyframedByUs ? "" : " (no physics)", held.distance);
+			REX::INFO("Picked up {:08X}{}, {:.2f} m away (held at {:.2f} m)", Engine::FormID(object),
+				held.keyframedByUs ? "" : " (no physics)", away, held.distance);
 			if (settings.debugLog) {
 				REX::INFO("  view origin ({:.1f}, {:.1f}, {:.1f}) forward ({:.3f}, {:.3f}, {:.3f}) first person {}; object at ({:.1f}, {:.1f}, {:.1f})",
 					view->origin.x, view->origin.y, view->origin.z, view->forward.x, view->forward.y, view->forward.z, view->firstPerson,

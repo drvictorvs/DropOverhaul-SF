@@ -93,10 +93,10 @@ namespace DROP
 			{ "Placement", "bRotateWithView", Kind::Bool, &rotateWithView },
 			{ "Placement", "bAllowStatic", Kind::Bool, &allowStatic },
 			{ "Placement", "fRotateSpeed", Kind::Double, &rotateSpeed, 1.0, 720.0 },
-			{ "Placement", "fMoveSpeed", Kind::Double, &moveSpeed, 1.0, 2000.0 },
+			{ "Placement", "fMoveSpeedMeters", Kind::Double, &moveSpeed, 0.05, 20.0 },
 			{ "Placement", "fFineMultiplier", Kind::Double, &fineMultiplier, 0.01, 1.0 },
-			{ "Placement", "fMinDistance", Kind::Double, &minDistance, 0.0, 1000.0 },
-			{ "Placement", "fMaxDistance", Kind::Double, &maxDistance, 10.0, 10000.0 },
+			{ "Placement", "fMinDistanceMeters", Kind::Double, &minDistance, 0.0, 5.0 },
+			{ "Placement", "fMaxDistanceMeters", Kind::Double, &maxDistance, 1.0, 50.0 },
 			{ "General", "bNotifications", Kind::Bool, &notifications },
 			{ "General", "bDebugLog", Kind::Bool, &debugLog },
 		};

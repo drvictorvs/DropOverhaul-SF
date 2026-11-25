@@ -98,10 +98,10 @@ namespace DROP::OSF
 			ReadBool("rotateWithView", s.rotateWithView);
 			ReadBool("allowStatic", s.allowStatic);
 			ReadFloat("rotateSpeed", s.rotateSpeed);
-			ReadFloat("moveSpeed", s.moveSpeed);
+			ReadFloat("moveSpeedMeters", s.moveSpeed);
 			ReadFloat("fineMultiplier", s.fineMultiplier);
-			ReadFloat("minDistance", s.minDistance);
-			ReadFloat("maxDistance", s.maxDistance);
+			ReadFloat("minDistanceMeters", s.minDistance);
+			ReadFloat("maxDistanceMeters", s.maxDistance);
 			ReadBool("notifications", s.notifications);
 			if (s.minDistance > s.maxDistance) {
 				std::swap(s.minDistance, s.maxDistance);
