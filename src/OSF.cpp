@@ -80,7 +80,11 @@ namespace DROP::OSF
 		{
 			auto& s = Settings::Get();
 			ReadKey("grabKey", s.grabKey);
+			ReadKey("placeKey", s.placeKey);
 			ReadKey("cancelKey", s.cancelKey);
+			ReadKey("rotateModifierKey", s.rotateModifierKey);
+			ReadKey("moveModifierKey", s.moveModifierKey);
+			ReadKey("advancedModeKey", s.advancedModeKey);
 			ReadKey("yawLeftKey", s.yawLeftKey);
 			ReadKey("yawRightKey", s.yawRightKey);
 			ReadKey("pitchUpKey", s.pitchUpKey);
@@ -96,6 +100,7 @@ namespace DROP::OSF
 			ReadKey("freezeToggleKey", s.freezeToggleKey);
 			ReadBool("holdMode", s.holdMode);
 			ReadFloat("mouseRotateSpeed", s.mouseRotateSpeed);
+			ReadFloat("mouseMoveSpeed", s.mouseMoveSpeed);
 			ReadFloat("wheelRotateStep", s.wheelRotateStep);
 			ReadBool("dropOnPlace", s.dropOnPlace);
 			ReadBool("rotateWithView", s.rotateWithView);

@@ -75,7 +75,11 @@ namespace DROP
 	{
 		const Option options[]{
 			{ "Keys", "iGrabKey", Kind::Key, &grabKey },
+			{ "Keys", "iPlaceKey", Kind::Key, &placeKey },
 			{ "Keys", "iCancelKey", Kind::Key, &cancelKey },
+			{ "Keys", "iRotateModifierKey", Kind::Key, &rotateModifierKey },
+			{ "Keys", "iMoveModifierKey", Kind::Key, &moveModifierKey },
+			{ "Keys", "iAdvancedModeKey", Kind::Key, &advancedModeKey },
 			{ "Keys", "iYawLeftKey", Kind::Key, &yawLeftKey },
 			{ "Keys", "iYawRightKey", Kind::Key, &yawRightKey },
 			{ "Keys", "iPitchUpKey", Kind::Key, &pitchUpKey },
@@ -91,6 +95,7 @@ namespace DROP
 			{ "Keys", "iFreezeToggleKey", Kind::Key, &freezeToggleKey },
 			{ "Placement", "bHoldMode", Kind::Bool, &holdMode },
 			{ "Placement", "fMouseRotateSpeed", Kind::Double, &mouseRotateSpeed, 0.01, 5.0 },
+			{ "Placement", "fMouseMoveSpeed", Kind::Double, &mouseMoveSpeed, 0.0001, 0.05 },
 			{ "Placement", "fWheelRotateStep", Kind::Double, &wheelRotateStep, 0.0, 90.0 },
 			{ "Placement", "bDropOnPlace", Kind::Bool, &dropOnPlace },
 			{ "Placement", "bRotateWithView", Kind::Bool, &rotateWithView },

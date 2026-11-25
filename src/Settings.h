@@ -8,14 +8,18 @@ namespace DROP
 	{
 		// [Keys]
 		std::uint32_t grabKey{ 0x04 };         // middle mouse: pick up what you're looking at / place it
-		std::uint32_t cancelKey{ 0x2E };       // Delete: put it back where it was
+		std::uint32_t placeKey{ 0x01 };        // left mouse: place it (Activate, E, places it too)
+		std::uint32_t cancelKey{ 0x02 };       // right mouse: put it back where it was
+		std::uint32_t rotateModifierKey{ 0x11 };  // Ctrl (hold): the mouse turns the object instead of the camera
+		std::uint32_t moveModifierKey{ 0x10 };    // Shift (hold): the mouse raises and lowers it instead
+		std::uint32_t advancedModeKey{ 0x20 };    // Space: switch advanced mode (the mouse also tilts / moves sideways)
 		std::uint32_t yawLeftKey{ 0x64 };      // numpad 4
 		std::uint32_t yawRightKey{ 0x66 };     // numpad 6
 		std::uint32_t pitchUpKey{ 0x68 };      // numpad 8
 		std::uint32_t pitchDownKey{ 0x62 };    // numpad 2
 		std::uint32_t rollLeftKey{ 0x67 };     // numpad 7
 		std::uint32_t rollRightKey{ 0x69 };    // numpad 9
-		std::uint32_t resetRotationKey{ 0x65 };  // numpad 5
+		std::uint32_t resetRotationKey{ 0x09 };  // Tab: undo turning and moving (with Ctrl or Shift held, only that one)
 		std::uint32_t pushKey{ 0x6B };         // numpad +: farther
 		std::uint32_t pullKey{ 0x6D };         // numpad -: closer
 		std::uint32_t raiseKey{ 0x21 };        // PageUp
@@ -25,7 +29,8 @@ namespace DROP
 
 		// [Placement]
 		bool   holdMode{ false };        // false: builder mode (the object sits on what you aim at); true: held in front of you
-		double mouseRotateSpeed{ 0.3 };  // degrees per mouse count, while dragging with a mouse button held
+		double mouseRotateSpeed{ 0.3 };  // degrees per mouse count, with the rotate modifier held
+		double mouseMoveSpeed{ 0.002 };  // meters per mouse count, with the move modifier held
 		double wheelRotateStep{ 15.0 };  // degrees per mouse-wheel notch
 		bool   dropOnPlace{ true };      // true: physics takes over when placed (it settles); false: stays exactly where placed
 		bool   rotateWithView{ true };   // the object turns with you, keeping the same side towards you

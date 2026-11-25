@@ -313,6 +313,53 @@ namespace DROP::Engine
 			float x, y, z, w;
 		};
 
+		// Where a ray (physics / scene-graph coordinates, a_dir of length 1) passes through a
+		// reference's bounds as its 3D is placed now: distances along the ray where it enters and
+		// leaves them. Null if it misses them.
+		std::optional<std::pair<float, float>> RayThroughBounds(const RE::TESObjectREFR* a_ref, const Bounds& a_bounds,
+			const Vec3& a_start, const Vec3& a_dir)
+		{
+			const auto* root = Loaded3D(a_ref);
+			if (!root) {
+				return std::nullopt;
+			}
+			float r[3][4];
+			std::memcpy(r, reinterpret_cast<const std::byte*>(root) + NodeWorldRotate, sizeof(r));
+			// world = R * local + t, so local = R^T * (world - t).
+			auto toLocal = [&](const Vec3& a_v) {
+				return Vec3{ r[0][0] * a_v.x + r[1][0] * a_v.y + r[2][0] * a_v.z,
+					r[0][1] * a_v.x + r[1][1] * a_v.y + r[2][1] * a_v.z,
+					r[0][2] * a_v.x + r[1][2] * a_v.y + r[2][2] * a_v.z };
+			};
+			const Vec3  o = toLocal(a_start - At<Vec3>(root, NodeWorldTranslate));
+			const Vec3  v = toLocal(a_dir);
+			const float lo[3]{ a_bounds.min.x, a_bounds.min.y, a_bounds.min.z };
+			const float hi[3]{ a_bounds.max.x, a_bounds.max.y, a_bounds.max.z };
+			const float oo[3]{ o.x, o.y, o.z };
+			const float vv[3]{ v.x, v.y, v.z };
+			float       enter = -std::numeric_limits<float>::max();
+			float       leave = std::numeric_limits<float>::max();
+			for (int k = 0; k < 3; ++k) {
+				if (std::abs(vv[k]) < 1e-6F) {
+					if (oo[k] < lo[k] || oo[k] > hi[k]) {
+						return std::nullopt;
+					}
+					continue;
+				}
+				float t1 = (lo[k] - oo[k]) / vv[k];
+				float t2 = (hi[k] - oo[k]) / vv[k];
+				if (t1 > t2) {
+					std::swap(t1, t2);
+				}
+				enter = std::max(enter, t1);
+				leave = std::min(leave, t2);
+			}
+			if (leave < std::max(enter, 0.0F)) {
+				return std::nullopt;
+			}
+			return std::pair{ enter, leave };
+		}
+
 		// One cast from a_from to a_to (physics coordinates). False: nothing hit (or skipped).
 		bool PickOnce(void* a_world, const Vec3& a_from, const Vec3& a_to, std::byte* a_pick)
 		{
@@ -342,9 +389,20 @@ namespace DROP::Engine
 			const bool hit = pick(a_world, a_pick);
 			return hit && At<std::uint8_t>(a_pick, PickSkipped) == 0;
 		}
+
+		// Pick keeps a reference on the world it stores at + 0xE0; the game's pick data releases it.
+		void ReleasePick(std::byte* a_pick)
+		{
+			if (void* const world = At<void*>(a_pick, PickWorld)) {
+				static REL::Relocation<void (*)(void*)> release{ ReferencedObject_Release };
+				release(world);
+				At<void*>(a_pick, PickWorld) = nullptr;
+			}
+		}
 	}
 
-	std::optional<Hit> CastRay(const View& a_view, float a_length, std::initializer_list<const RE::TESObjectREFR*> a_ignore)
+	std::optional<Hit> CastRay(const View& a_view, float a_length, std::initializer_list<const RE::TESObjectREFR*> a_ignore,
+		const RE::TESObjectREFR* a_self, const std::optional<Bounds>& a_selfBounds)
 	{
 		void* const world = PhysicsWorld();
 		if (!world || a_length <= 0.0F) {
@@ -356,13 +414,20 @@ namespace DROP::Engine
 		const Vec3 end = start + a_view.forward * a_length;
 		Vec3       from = start;
 
+		// Hits on the held object, if a hit on it isn't recognized as its own: anything before the ray
+		// leaves its bounds. A surface right where the ray leaves them (what it rests on) counts.
+		const auto self = a_self && a_selfBounds ? RayThroughBounds(a_self, *a_selfBounds, start, a_view.forward) : std::nullopt;
+
 		alignas(16) std::byte pick[PickSize];
 		// A hit on a skipped reference: cast again from just past it, a few times at most.
 		for (int i = 0; i < 6; ++i) {
 			if ((end - from).Dot(a_view.forward) <= 0.01F) {
 				break;
 			}
-			if (!PickOnce(world, from, end, pick)) {
+			const bool hitSomething = PickOnce(world, from, end, pick);
+			// Read what's needed before letting go of the world reference.
+			if (!hitSomething) {
+				ReleasePick(pick);
 				return std::nullopt;
 			}
 			const auto&   result = *reinterpret_cast<const Vec4*>(pick + PickResult + ResultPosition);
@@ -370,8 +435,11 @@ namespace DROP::Engine
 			const Vec3    position{ result.x, result.y, result.z };
 			const auto    layer = At<std::uint32_t>(pick, PickResult + ResultHitFilter) & 0x7F;
 			auto* const   ref = RefForBody(At<void*>(pick, PickWorld), At<std::uint32_t>(pick, PickResult + ResultHitBody));
+			ReleasePick(pick);
 			const bool    seeThrough = layer == 3 || (layer >= 26 && layer <= 28);
-			const bool    ignored = ref && std::ranges::find(a_ignore, ref) != a_ignore.end();
+			const float   along = (position - start).Dot(a_view.forward);
+			const bool    insideSelf = self && along > self->first - 0.03F && along < self->second - 0.01F;
+			const bool    ignored = (ref && std::ranges::find(a_ignore, ref) != a_ignore.end()) || insideSelf;
 			if (seeThrough || ignored) {
 				from = position + a_view.forward * 0.02F;
 				continue;

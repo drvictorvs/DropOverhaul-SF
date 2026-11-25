@@ -104,6 +104,9 @@ namespace DROP::GameID
 	// bhkWorld** (global pointer to a pointer): the physics world outside interiors.
 	inline constexpr REL::ID ExteriorPhysicsWorld{ 938080 };
 
+	// void (hkReferencedObject*): removes a reference (Pick adds one on the world it stores).
+	inline constexpr REL::ID ReferencedObject_Release{ 156224 };
+
 	// TESObjectREFR* (NiAVObject*, bool): the reference a 3D node belongs to.
 	inline constexpr REL::ID RefFor3D{ 63285 };
 

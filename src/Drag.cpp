@@ -39,6 +39,58 @@ namespace DROP::Drag
 
 		std::uint64_t g_frame = 0;
 
+		constexpr auto kKeyboard = RE::InputEvent::DeviceType::kKeyboard;
+		constexpr auto kMouse = RE::InputEvent::DeviceType::kMouse;
+
+		std::optional<std::uint32_t> MouseButton(std::uint32_t a_vk)
+		{
+			switch (a_vk) {
+			case 0x01: return 0;  // VK_LBUTTON
+			case 0x02: return 1;  // VK_RBUTTON
+			case 0x04: return 2;  // VK_MBUTTON
+			case 0x05: return 3;  // VK_XBUTTON1
+			case 0x06: return 4;  // VK_XBUTTON2
+			default: return std::nullopt;
+			}
+		}
+
+		// The game's keyboard codes that stand for a Windows key code. Shift, Ctrl and Alt come as either
+		// the generic code or the left/right one (the game reports Shift as left or right Shift; OSF
+		// Settings stores "L Ctrl" as the left code), so each matches the other: the generic code
+		// matches both sides, a left or right code matches itself and the generic one.
+		std::array<std::uint32_t, 3> KeyboardCodes(std::uint32_t a_vk)
+		{
+			switch (a_vk) {
+			case 0x10: return { 0x10, 0xA0, 0xA1 };
+			case 0x11: return { 0x11, 0xA2, 0xA3 };
+			case 0x12: return { 0x12, 0xA4, 0xA5 };
+			case 0xA0:
+			case 0xA1: return { a_vk, 0x10, 0x10 };
+			case 0xA2:
+			case 0xA3: return { a_vk, 0x11, 0x11 };
+			case 0xA4:
+			case 0xA5: return { a_vk, 0x12, 0x12 };
+			default: return { a_vk, a_vk, a_vk };
+			}
+		}
+
+		// Whether a game button event is the key a setting names (a Windows key code).
+		bool Matches(const RE::ButtonEvent& a_button, std::uint32_t a_vk)
+		{
+			if (a_vk == 0 || a_button.idCode < 0) {
+				return false;
+			}
+			const auto code = static_cast<std::uint32_t>(a_button.idCode);
+			if (const auto button = MouseButton(a_vk)) {
+				return a_button.deviceType == kMouse && code == *button;
+			}
+			if (a_button.deviceType != kKeyboard) {
+				return false;
+			}
+			const auto codes = KeyboardCodes(a_vk);
+			return std::ranges::find(codes, code) != codes.end();
+		}
+
 		class GameKeys
 		{
 		public:
@@ -69,8 +121,15 @@ namespace DROP::Drag
 			// a_vk: a Windows virtual-key code, as the settings use.
 			bool Down(std::uint32_t a_vk) const
 			{
-				const Key* key = FindVK(a_vk);
-				return key && IsDown(*key);
+				if (const auto button = MouseButton(a_vk)) {
+					return IsDown(_mouse[*button]);
+				}
+				for (const auto code : KeyboardCodes(a_vk)) {
+					if (code < _keyboard.size() && IsDown(_keyboard[code])) {
+						return true;
+					}
+				}
+				return false;
 			}
 
 		private:
@@ -85,39 +144,19 @@ namespace DROP::Drag
 
 			static bool IsDown(const Key& a_key) { return a_key.down && g_frame - a_key.frame <= kStaleFrames; }
 
-			static std::optional<std::size_t> MouseButton(std::uint32_t a_vk)
-			{
-				switch (a_vk) {
-				case 0x01: return 0;  // VK_LBUTTON
-				case 0x02: return 1;  // VK_RBUTTON
-				case 0x04: return 2;  // VK_MBUTTON
-				case 0x05: return 3;  // VK_XBUTTON1
-				case 0x06: return 4;  // VK_XBUTTON2
-				default: return std::nullopt;
-				}
-			}
-
 			Key* Find(RE::InputEvent::DeviceType a_device, std::int32_t a_code)
 			{
 				if (a_code < 0) {
 					return nullptr;
 				}
 				const auto code = static_cast<std::size_t>(a_code);
-				if (a_device == RE::InputEvent::DeviceType::kKeyboard && code < _keyboard.size()) {
+				if (a_device == kKeyboard && code < _keyboard.size()) {
 					return &_keyboard[code];
 				}
-				if (a_device == RE::InputEvent::DeviceType::kMouse && code < _mouse.size()) {
+				if (a_device == kMouse && code < _mouse.size()) {
 					return &_mouse[code];
 				}
 				return nullptr;
-			}
-
-			const Key* FindVK(std::uint32_t a_vk) const
-			{
-				if (const auto button = MouseButton(a_vk)) {
-					return &_mouse[*button];
-				}
-				return a_vk < _keyboard.size() ? &_keyboard[a_vk] : nullptr;
 			}
 
 			std::array<Key, 256> _keyboard{};
@@ -183,13 +222,15 @@ namespace DROP::Drag
 			Vec3                          originalAngle;
 			std::optional<Engine::Bounds> bounds;
 			bool                          builder{ true };  // sits on what you aim at; else held in front of you
+			bool                          advanced{ false };  // the mouse also tilts (rotate modifier) and moves sideways (move modifier)
 			bool                          keyframedByUs{ false };
 			bool                          dropOnPlace{ true };
 			bool                          loggedAim{ false };
 			bool                          loggedNoSurface{ false };
 			float                         distance{ 1.5F };  // meters
 			float                         height{ 0.0F };    // meters, added to the target height
-			float                         yaw{ 0.0F };       // hold mode with bRotateWithView: relative to the view's yaw; else absolute
+			float                         side{ 0.0F };      // meters, to the right of the view
+			float                         yaw{ 0.0F };       // with bRotateWithView: relative to the view's yaw; else absolute
 			float                         pitch{ 0.0F };
 			float                         roll{ 0.0F };
 		};
@@ -198,24 +239,29 @@ namespace DROP::Drag
 
 		struct Captured
 		{
-			bool         place{ false };         // an Activate press
-			bool         activateDown{ false };
-			bool         turnDown{ false };      // left mouse button: drag to turn
-			bool         tiltDown{ false };      // right mouse button: drag to tilt and roll
+			bool         place{ false };  // an Activate press
 			bool         wheelUpLast{ false };
 			bool         wheelDownLast{ false };
-			int          wheel{ 0 };             // notches since the frame update, + = up
-			std::int32_t dx{ 0 };                // mouse movement since the frame update, while a button is held
+			int          wheel{ 0 };      // notches since the frame update, + = up
+			std::int32_t dx{ 0 };         // mouse movement since the frame update, with a modifier held
 			std::int32_t dy{ 0 };
 		};
 		Captured g_captured;
 		bool     g_capturing = false;  // set by the frame update: an object is held and keys are active
+
+		// Buttons taken while down: their later events are taken too, until released, so the game
+		// never sees a release without its press.
+		std::array<bool, 256> g_takenKeys{};
+		std::array<bool, 5>   g_takenMouse{};
+		bool                  g_takenActivate{ false };
 
 		std::optional<HeldObject>             g_held;
 		Edge                                  g_grab;
 		Edge                                  g_cancel;
 		Edge                                  g_reset;
 		Edge                                  g_freeze;
+		Edge                                  g_place;
+		Edge                                  g_advanced;
 		std::chrono::steady_clock::time_point g_lastFrame{};
 
 		bool GameHasFocus()
@@ -277,15 +323,27 @@ namespace DROP::Drag
 
 		Vec3 TargetAngle(const HeldObject& a_held, const Engine::View& a_view)
 		{
-			const bool  withView = !a_held.builder && Settings::Get().rotateWithView;
+			const bool  withView = Settings::Get().rotateWithView;
 			const float yaw = withView ? Engine::YawOf(a_view.forward) + a_held.yaw : a_held.yaw;
 			return { WrapAngle(a_held.pitch), WrapAngle(a_held.roll), WrapAngle(yaw) };
 		}
 
-		// Hold mode: at the held distance along the view, plus the height offset.
+		// The view's horizontal right-hand direction.
+		Vec3 RightOf(const Engine::View& a_view)
+		{
+			return Vec3{ a_view.forward.y, -a_view.forward.x, 0.0F }.Normalized();
+		}
+
+		// Height and sideways offsets.
+		Vec3 Offset(const HeldObject& a_held, const Engine::View& a_view)
+		{
+			return RightOf(a_view) * a_held.side + Vec3{ 0.0F, 0.0F, a_held.height };
+		}
+
+		// Hold mode: at the held distance along the view, plus the offsets.
 		Vec3 TargetPosition(const HeldObject& a_held, const Engine::View& a_view)
 		{
-			return a_view.origin + a_view.forward * a_held.distance + Vec3{ 0.0F, 0.0F, a_held.height };
+			return a_view.origin + a_view.forward * a_held.distance + Offset(a_held, a_view);
 		}
 
 		// Builder mode: on the surface hit, moved out by the object's bounds so it rests against it
@@ -315,16 +373,17 @@ namespace DROP::Drag
 		{
 			const auto& settings = Settings::Get();
 			auto* const object = a_held.ref.get();
-			const auto  hit = Engine::CastRay(a_view, static_cast<float>(settings.maxDistance), { object, Engine::GetPlayer() });
+			const auto  hit = Engine::CastRay(a_view, static_cast<float>(settings.maxDistance), { object, Engine::GetPlayer() },
+				object, a_held.bounds);
 			if (!hit) {
 				if (!a_held.loggedNoSurface) {
 					a_held.loggedNoSurface = true;
 					REX::INFO("  no surface within {:.1f} m: holding it at {:.2f} m", settings.maxDistance, a_held.distance);
 				}
-				return a_view.origin + a_view.forward * a_held.distance + Vec3{ 0.0F, 0.0F, a_held.height };
+				return a_view.origin + a_view.forward * a_held.distance + Offset(a_held, a_view);
 			}
 			a_held.distance = std::clamp(hit->distance, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
-			const Vec3 p = OnSurface(a_held, *hit) + Vec3{ 0.0F, 0.0F, a_held.height };
+			const Vec3 p = OnSurface(a_held, *hit) + Offset(a_held, a_view);
 			if (!a_held.loggedAim || settings.debugLog) {
 				static std::uint32_t count = 0;
 				if (!a_held.loggedAim || ++count % 60 == 0) {
@@ -387,7 +446,7 @@ namespace DROP::Drag
 			held.height = held.builder ? 0.0F : rel.z - view->forward.z * held.distance;
 			held.pitch = held.originalAngle.x;
 			held.roll = held.originalAngle.y;
-			held.yaw = !held.builder && settings.rotateWithView ? WrapAngle(held.originalAngle.z - Engine::YawOf(view->forward)) : held.originalAngle.z;
+			held.yaw = settings.rotateWithView ? WrapAngle(held.originalAngle.z - Engine::YawOf(view->forward)) : held.originalAngle.z;
 
 			REX::INFO("Picked up {:08X}{}, {:.2f} m away ({} mode)", Engine::FormID(object),
 				held.keyframedByUs ? "" : " (no physics)", away, held.builder ? "builder" : "hold");
@@ -402,7 +461,8 @@ namespace DROP::Drag
 			}
 
 			if (held.builder) {
-				Tell(held.dropOnPlace ? "Placing: E to set down, Delete to put back" : "Placing (stays in place): E to set down, Delete to put back");
+				Tell(held.dropOnPlace ? "Placing: click to set down, right-click to put back" :
+				                        "Placing (stays in place): click to set down, right-click to put back");
 			} else {
 				Tell(held.dropOnPlace ? "Holding: drops when placed" : "Holding: stays where placed");
 			}
@@ -466,22 +526,41 @@ namespace DROP::Drag
 			if (Held(settings.lowerKey)) held.height -= move;
 			held.distance = std::clamp(held.distance, static_cast<float>(settings.minDistance), static_cast<float>(settings.maxDistance));
 
-			// Mouse: drag with the left button to turn, with the right to tilt (up/down) and roll
-			// (left/right); the wheel turns in steps.
-			const float perCount = static_cast<float>(settings.mouseRotateSpeed) * kDegToRad * scale;
-			if (a_captured.tiltDown) {
-				held.pitch += static_cast<float>(a_captured.dy) * perCount;
-				held.roll += static_cast<float>(a_captured.dx) * perCount;
-			} else {
+			// Mouse, as in Object Manipulation Overhaul: with the rotate modifier held it turns the object
+			// (and, in advanced mode, tilts it with up/down); with the move modifier held it raises and
+			// lowers it (and, in advanced mode, moves it sideways). The wheel turns it in steps.
+			const bool rotating = Held(settings.rotateModifierKey);
+			const bool moving = !rotating && Held(settings.moveModifierKey);
+			if (rotating) {
+				const float perCount = static_cast<float>(settings.mouseRotateSpeed) * kDegToRad * scale;
 				held.yaw += static_cast<float>(a_captured.dx) * perCount;
+				if (held.advanced) {
+					held.pitch += static_cast<float>(a_captured.dy) * perCount;
+				}
+			} else if (moving) {
+				const float perCount = static_cast<float>(settings.mouseMoveSpeed) * scale;
+				held.height -= static_cast<float>(a_captured.dy) * perCount;  // mouse up raises it
+				if (held.advanced) {
+					held.side += static_cast<float>(a_captured.dx) * perCount;
+				}
 			}
 			held.yaw -= static_cast<float>(a_captured.wheel) * static_cast<float>(settings.wheelRotateStep) * kDegToRad;
 
+			if (g_advanced.Pressed(settings.advancedModeKey)) {
+				held.advanced = !held.advanced;
+				REX::INFO("{:08X}: advanced mode {}", Engine::FormID(object), held.advanced ? "on" : "off");
+				Tell(held.advanced ? "Advanced: Ctrl tilts too, Shift moves sideways too" : "Advanced off");
+			}
 			if (g_reset.Pressed(settings.resetRotationKey)) {
-				held.pitch = 0.0F;
-				held.roll = 0.0F;
-				if (!held.builder) {
+				// With a modifier held, only what it changes; otherwise both.
+				if (!moving) {
+					held.pitch = 0.0F;
+					held.roll = 0.0F;
 					held.yaw = 0.0F;  // facing the same way as you (or north, without bRotateWithView)
+				}
+				if (!rotating) {
+					held.height = 0.0F;
+					held.side = 0.0F;
 				}
 			}
 			if (g_freeze.Pressed(settings.freezeToggleKey)) {
@@ -544,12 +623,18 @@ namespace DROP::Drag
 		g_captured.dx = 0;
 		g_captured.dy = 0;
 
-		if (!focus || blocker) {
-			// Forget key states, so a key pressed in a menu doesn't act when it closes.
-			g_grab.Pressed(settings.grabKey);
+		// Keep every press action's key state current, so a press made while it couldn't act (in a
+		// menu, or while not holding) doesn't act later.
+		auto syncEdges = [&]() {
 			g_cancel.Pressed(settings.cancelKey);
+			g_place.Pressed(settings.placeKey);
 			g_reset.Pressed(settings.resetRotationKey);
 			g_freeze.Pressed(settings.freezeToggleKey);
+			g_advanced.Pressed(settings.advancedModeKey);
+		};
+		if (!focus || blocker) {
+			g_grab.Pressed(settings.grabKey);
+			syncEdges();
 			return;
 		}
 
@@ -565,18 +650,15 @@ namespace DROP::Drag
 			return;
 		}
 		if (!g_held) {
-			// Keep the edge states current, so a press made while not holding doesn't act later.
-			g_cancel.Pressed(settings.cancelKey);
-			g_reset.Pressed(settings.resetRotationKey);
-			g_freeze.Pressed(settings.freezeToggleKey);
+			syncEdges();
 			return;
 		}
 		if (g_cancel.Pressed(settings.cancelKey)) {
 			PutBack();
 			return;
 		}
-		if (captured.place) {
-			REX::INFO("Activate pressed: placing");
+		if (g_place.Pressed(settings.placeKey) || captured.place) {
+			REX::INFO("{} pressed: placing", captured.place ? "Activate" : "Place key");
 			Place();
 			return;
 		}
@@ -585,63 +667,75 @@ namespace DROP::Drag
 
 	void FilterInput(RE::InputEvent* a_head)
 	{
-		// While holding, take the events. Once let go, keep taking a mouse button or Activate that's
-		// still down, so its release doesn't reach the game without its press.
-		const bool active = g_capturing;
-		auto&      c = g_captured;
-		if (!active && !c.turnDown && !c.tiltDown && !c.activateDown) {
-			c.wheelUpLast = false;
-			c.wheelDownLast = false;
-			return;
-		}
-		const bool wheelOn = active && Settings::Get().wheelRotateStep > 0.0;
+		const auto& settings = Settings::Get();
+		const bool  active = g_capturing;
+		auto&       c = g_captured;
+
+		// While holding: the keys this plugin uses while holding, Activate, the wheel, and the mouse
+		// movement while a modifier is held. Once let go, only buttons still down from then.
+		const bool modifier = active && (Held(settings.rotateModifierKey) || Held(settings.moveModifierKey));
+		const bool wheelOn = active && settings.wheelRotateStep > 0.0;
 		bool       wheelUp = false;
 		bool       wheelDown = false;
 
 		for (auto* event = a_head; event; event = event->next) {
-			if (event->eventType == RE::InputEvent::EventType::kButton) {
-				auto&      button = *static_cast<RE::ButtonEvent*>(event);
-				const bool down = button.value != 0.0F;
-				if (IsActivate(button) && (active || c.activateDown)) {
-					if (active && down && !c.activateDown) {
+			if (event->eventType == RE::InputEvent::EventType::kMouseMove) {
+				if (modifier) {
+					// MouseMoveEvent: IDEvent, then the movement in mouse counts (game code: ID 124081).
+					auto* const raw = reinterpret_cast<std::byte*>(event);
+					auto&       x = *reinterpret_cast<std::int32_t*>(raw + 0x38);
+					auto&       y = *reinterpret_cast<std::int32_t*>(raw + 0x3C);
+					c.dx += x;
+					c.dy += y;
+					x = 0;  // the camera stays still meanwhile
+					y = 0;
+				}
+				continue;
+			}
+			if (event->eventType != RE::InputEvent::EventType::kButton) {
+				continue;
+			}
+			auto& button = *static_cast<RE::ButtonEvent*>(event);
+			if (button.idCode < 0) {
+				continue;
+			}
+			const bool down = button.value != 0.0F;
+			const auto code = static_cast<std::uint32_t>(button.idCode);
+
+			bool* taken = nullptr;  // "taken while down" flag for this button, if it has one
+			if (button.deviceType == kKeyboard && code < g_takenKeys.size()) {
+				taken = &g_takenKeys[code];
+			} else if (button.deviceType == kMouse && code < g_takenMouse.size()) {
+				taken = &g_takenMouse[code];
+			}
+
+			if (IsActivate(button)) {
+				if (active || g_takenActivate) {
+					if (active && down && !g_takenActivate) {
 						c.place = true;
 					}
-					c.activateDown = down;
+					g_takenActivate = down;
 					Take(button);
-				} else if (button.deviceType == RE::InputEvent::DeviceType::kMouse) {
-					switch (button.idCode) {
-					case 0:  // left
-						if (active || c.turnDown) {
-							c.turnDown = down;
-							Take(button);
-						}
-						break;
-					case 1:  // right
-						if (active || c.tiltDown) {
-							c.tiltDown = down;
-							Take(button);
-						}
-						break;
-					case 0x800:  // wheel up
-					case 0x900:  // wheel down
-						if (wheelOn) {
-							(button.idCode == 0x800 ? wheelUp : wheelDown) = true;
-							Take(button);
-						}
-						break;
-					default:
-						break;
-					}
 				}
-			} else if (event->eventType == RE::InputEvent::EventType::kMouseMove && active && (c.turnDown || c.tiltDown)) {
-				// MouseMoveEvent: IDEvent, then the movement in mouse counts (game code: ID 124081).
-				auto* const raw = reinterpret_cast<std::byte*>(event);
-				auto&       x = *reinterpret_cast<std::int32_t*>(raw + 0x38);
-				auto&       y = *reinterpret_cast<std::int32_t*>(raw + 0x3C);
-				c.dx += x;
-				c.dy += y;
-				x = 0;  // the camera doesn't turn while dragging
-				y = 0;
+				continue;
+			}
+			if (button.deviceType == kMouse && (code == 0x800 || code == 0x900)) {
+				if (wheelOn) {
+					(code == 0x800 ? wheelUp : wheelDown) = true;
+					Take(button);
+				}
+				continue;
+			}
+
+			const bool ours = active && std::ranges::any_of(
+				std::array{ settings.placeKey, settings.cancelKey, settings.rotateModifierKey, settings.moveModifierKey,
+					settings.advancedModeKey, settings.resetRotationKey },
+				[&](std::uint32_t a_key) { return Matches(button, a_key); });
+			if (ours || (taken && *taken)) {
+				if (taken) {
+					*taken = down;
+				}
+				Take(button);
 			}
 		}
 

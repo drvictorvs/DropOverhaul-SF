@@ -117,6 +117,7 @@ namespace DROP::Address
 				{ GameID::bhkWorld_FromExtraData.id(), "interior physics world" },
 				{ GameID::ExteriorPhysicsWorld.id(), "exterior physics world" },
 				{ GameID::RefFor3D.id(), "reference for 3D" },
+				{ GameID::ReferencedObject_Release.id(), "hkReferencedObject release" },
 				{ RE::ID::BSTEventSource::Notify.id(), "BSTEventSource::Notify" },
 				{ RE::ID::UI::Singleton.id(), "UI::Singleton" },
 				{ RE::ID::UI::IsMenuOpen.id(), "UI::IsMenuOpen" },

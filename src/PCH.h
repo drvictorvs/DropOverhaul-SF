@@ -15,6 +15,7 @@
 #include <cwctype>
 #include <filesystem>
 #include <format>
+#include <limits>
 #include <fstream>
 #include <optional>
 #include <span>
